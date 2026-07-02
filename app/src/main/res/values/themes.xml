@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.BreakFree" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.BreakFree.Overlay" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowBackground">@color/black</item>
+    </style>
+</resources>

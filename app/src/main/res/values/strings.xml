@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">BreakFree</string>
+    <string name="accessibility_service_description">BreakFree uses this to detect when a blocked app is opened, entirely on-device. No data is collected or transmitted.</string>
+</resources>
