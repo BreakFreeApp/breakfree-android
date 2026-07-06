@@ -13,13 +13,6 @@ private val Context.settingsDataStore by preferencesDataStore(name = "breakfree_
 
 data class BreakDurationOption(val label: String, val seconds: Int)
 
-/** Default break-length choices shown when requesting a break. */
-val DEFAULT_DURATION_OPTIONS = listOf(
-    BreakDurationOption("30 sec", 30),
-    BreakDurationOption("1 min", 60),
-    BreakDurationOption("10 min", 600)
-)
-
 class SettingsDataStore(private val context: Context) {
 
     private object Keys {
@@ -29,17 +22,17 @@ class SettingsDataStore(private val context: Context) {
     }
 
     val gracePeriodSeconds: Flow<Int> = context.settingsDataStore.data.map {
-        it[Keys.GRACE_PERIOD_SECONDS] ?: 30
+        it[Keys.GRACE_PERIOD_SECONDS] ?: AppDefaults.GRACE_PERIOD_SECONDS
     }
 
     val strictMode: Flow<Boolean> = context.settingsDataStore.data.map {
-        it[Keys.STRICT_MODE] ?: true
+        it[Keys.STRICT_MODE] ?: AppDefaults.STRICT_MODE
     }
 
     val durationOptions: Flow<List<BreakDurationOption>> = context.settingsDataStore.data.map { prefs ->
         val csv = prefs[Keys.DURATION_OPTIONS_SECONDS]
         if (csv.isNullOrBlank()) {
-            DEFAULT_DURATION_OPTIONS
+            AppDefaults.DURATION_OPTIONS
         } else {
             csv.split(",").mapNotNull { it.trim().toIntOrNull() }.map { secs ->
                 BreakDurationOption(labelForSeconds(secs), secs)

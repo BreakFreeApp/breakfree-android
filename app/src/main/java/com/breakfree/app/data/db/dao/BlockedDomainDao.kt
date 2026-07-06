@@ -17,6 +17,9 @@ interface BlockedDomainDao {
     @Query("SELECT domain FROM blocked_domains")
     suspend fun getAllDomains(): List<String>
 
+    @Query("SELECT * FROM blocked_domains WHERE domain = :domain")
+    suspend fun getDomain(domain: String): BlockedDomain?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(domain: BlockedDomain)
 

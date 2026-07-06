@@ -1,19 +1,18 @@
 package com.breakfree.app.ui
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.AppOpsManager
 import android.content.Intent
 import android.os.Bundle
+import android.os.Process
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.breakfree.app.service.BreakFreeAccessibilityService
-import com.breakfree.app.service.BreakFreeVpnService
 import com.breakfree.app.ui.screens.AppPickerScreen
 import com.breakfree.app.ui.screens.DomainListScreen
 import com.breakfree.app.ui.screens.HomeScreen
@@ -21,20 +20,6 @@ import com.breakfree.app.ui.screens.SettingsScreen
 import com.breakfree.app.ui.theme.BreakFreeTheme
 
 class MainActivity : ComponentActivity() {
-
-    private val vpnPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            BreakFreeVpnService.start(this)
-        }
-    }
-
-    fun requestVpnPermissionAndStart() {
-        val intent = BreakFreeVpnService.prepareIntent(this)
-        if (intent != null) vpnPermissionLauncher.launch(intent) else BreakFreeVpnService.start(this)
-    }
-
     fun isAccessibilityServiceEnabled(): Boolean {
         val am = getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
         val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_GENERIC)
@@ -43,6 +28,21 @@ class MainActivity : ComponentActivity() {
 
     fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    fun isUsageStatsPermissionGranted(): Boolean {
+        val appOps = getSystemService(APP_OPS_SERVICE) as AppOpsManager
+        val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
+        }
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    fun openUsageStatsSettings() {
+        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,8 +65,9 @@ private fun AppNavHost(activity: MainActivity) {
                 onOpenDomainList = { navController.navigate("domains") },
                 onOpenSettings = { navController.navigate("settings") },
                 onEnableAccessibility = { activity.openAccessibilitySettings() },
-                onEnableVpn = { activity.requestVpnPermissionAndStart() },
-                isAccessibilityEnabled = { activity.isAccessibilityServiceEnabled() }
+                onEnableUsageStats = { activity.openUsageStatsSettings() },
+                isAccessibilityEnabled = { activity.isAccessibilityServiceEnabled() },
+                isUsageStatsEnabled = { activity.isUsageStatsPermissionGranted() }
             )
         }
         composable("apps") { AppPickerScreen(onBack = { navController.popBackStack() }) }

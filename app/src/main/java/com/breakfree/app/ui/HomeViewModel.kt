@@ -1,11 +1,14 @@
 package com.breakfree.app.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.breakfree.app.BreakFreeApplication
+import com.breakfree.app.data.settings.AppDefaults
 import com.breakfree.app.data.settings.BreakDurationOption
 import com.breakfree.app.data.settings.BreakPhase
+import com.breakfree.app.data.settings.PersistedBreakState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,13 +16,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+private const val TAG = "HomeViewModel"
+
 data class HomeUiState(
     val phase: BreakPhase = BreakPhase.NONE,
     val graceSecondsRemaining: Int = 0,
     val activeSecondsRemaining: Int = 0,
-    val durationOptions: List<BreakDurationOption> = emptyList(),
-    val gracePeriodSeconds: Int = 30,
-    val strictMode: Boolean = true,
+    val durationOptions: List<BreakDurationOption> = AppDefaults.DURATION_OPTIONS,
+    val gracePeriodSeconds: Int = AppDefaults.GRACE_PERIOD_SECONDS,
+    val strictMode: Boolean = AppDefaults.STRICT_MODE,
     val blockedAppCount: Int = 0,
     val blockedDomainCount: Int = 0
 )
@@ -38,27 +43,43 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         breakFreeApp.repository.observeBlockedApps(),
         breakFreeApp.repository.observeBlockedDomains()
     ) { values ->
-        val breakState = values[0] as com.breakfree.app.data.settings.PersistedBreakState
-        val durationOptions = values[1] as List<BreakDurationOption>
-        val gracePeriod = values[2] as Int
-        val strict = values[3] as Boolean
-        val apps = values[4] as List<*>
-        val domains = values[5] as List<*>
+        try {
+            val breakState = values[0] as? PersistedBreakState ?: PersistedBreakState(BreakPhase.NONE, 0, 0)
+            val durationOptions = (values[1] as? List<*>)?.filterIsInstance<BreakDurationOption>() ?: emptyList()
+            val gracePeriod = values[2] as? Int ?: AppDefaults.GRACE_PERIOD_SECONDS
+            val strict = values[3] as? Boolean ?: AppDefaults.STRICT_MODE
+            val apps = values[4] as? List<*> ?: emptyList<Any>()
+            val domains = values[5] as? List<*> ?: emptyList<Any>()
 
-        val now = System.currentTimeMillis()
-        HomeUiState(
-            phase = breakState.phase,
-            graceSecondsRemaining = ((breakState.graceEndsAtEpochMs - now) / 1000).coerceAtLeast(0).toInt(),
-            activeSecondsRemaining = ((breakState.activeEndsAtEpochMs - now) / 1000).coerceAtLeast(0).toInt(),
-            durationOptions = durationOptions,
-            gracePeriodSeconds = gracePeriod,
-            strictMode = strict,
-            blockedAppCount = apps.size,
-            blockedDomainCount = domains.size
-        )
+            val now = System.currentTimeMillis()
+            HomeUiState(
+                phase = breakState.phase,
+                graceSecondsRemaining = ((breakState.graceEndsAtEpochMs - now) / 1000).coerceAtLeast(0).toInt(),
+                activeSecondsRemaining = ((breakState.activeEndsAtEpochMs - now) / 1000).coerceAtLeast(0).toInt(),
+                durationOptions = durationOptions,
+                gracePeriodSeconds = gracePeriod,
+                strictMode = strict,
+                blockedAppCount = apps.size,
+                blockedDomainCount = domains.size
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in combine block", e)
+            HomeUiState()
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
 
     init {
+        // Preload basic app info when app starts
+        viewModelScope.launch {
+            try {
+                breakFreeApp.appRepository.preload()
+                // Lazy refresh of full stats in background
+                breakFreeApp.appRepository.refreshCache()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error preloading apps", e)
+            }
+        }
+
         // Re-emit every second while a break is pending/active so the countdown UI updates.
         viewModelScope.launch {
             while (true) {

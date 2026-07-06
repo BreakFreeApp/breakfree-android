@@ -10,5 +10,7 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "blocked_domains")
 data class BlockedDomain(
     @PrimaryKey val domain: String,
+    val isFavorite: Boolean = false,
+    val isBlocked: Boolean = true,
     val addedAt: Long = System.currentTimeMillis()
 )
