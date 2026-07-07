@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.map
 
 private val Context.breakStateDataStore by preferencesDataStore(name = "breakfree_break_state")
 
-enum class BreakPhase { NONE, GRACE, ACTIVE }
+enum class BreakPhase { NONE, GRACE, CHALLENGE, ACTIVE }
 
 data class PersistedBreakState(
     val phase: BreakPhase,
