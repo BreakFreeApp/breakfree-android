@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.breakfree.app.BreakFreeApplication
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.data.settings.BreakStateStore
 import com.breakfree.app.data.settings.PersistedBreakState
@@ -53,9 +54,9 @@ class BreakStateManager(
     /** Self-healing: derive the true phase from timestamps, not just the stored label. */
     private fun effective(s: PersistedBreakState, now: Long): PersistedBreakState = when (s.phase) {
         BreakPhase.GRACE -> if (now >= s.graceEndsAtEpochMs) {
-            if (now < s.activeEndsAtEpochMs) s.copy(phase = BreakPhase.ACTIVE)
-            else PersistedBreakState(BreakPhase.NONE, 0L, 0L)
+            s.copy(phase = BreakPhase.CHALLENGE)
         } else s
+        BreakPhase.CHALLENGE -> s
         BreakPhase.ACTIVE -> if (now >= s.activeEndsAtEpochMs) PersistedBreakState(BreakPhase.NONE, 0L, 0L) else s
         BreakPhase.NONE -> s
     }
@@ -73,18 +74,47 @@ class BreakStateManager(
         if (current.phase != BreakPhase.NONE) return false
 
         val graceEnds = now + gracePeriodSeconds * 1000L
-        val activeEnds = graceEnds + durationSeconds * 1000L
-        val newState = PersistedBreakState(BreakPhase.GRACE, graceEnds, activeEnds)
+        // We don't know activeEnds yet, we'll set it when confirmed. 
+        // But for persistence, we'll store durationSeconds in activeEndsAtEpochMs field temporarily (hacky)
+        // or better, just store the intended duration in a new field if we want to be clean.
+        // Let's reuse activeEndsAtEpochMs as "duration in ms" while in GRACE/CHALLENGE.
+        val newState = PersistedBreakState(BreakPhase.GRACE, graceEnds, durationSeconds * 1000L)
 
         _state.value = newState
         scope.launch { store.write(newState) }
         scheduleAlarm(graceEnds, ACTION_GRACE_ENDS, REQUEST_CODE_GRACE)
-        scheduleAlarm(activeEnds, ACTION_BREAK_ENDS, REQUEST_CODE_ACTIVE)
         return true
+    }
+
+    fun confirmBreak() {
+        val now = System.currentTimeMillis()
+        val current = _state.value
+        if (current.phase != BreakPhase.CHALLENGE) return
+
+        val durationMs = current.activeEndsAtEpochMs // stored duration
+        val activeEnds = now + durationMs
+        val newState = PersistedBreakState(BreakPhase.ACTIVE, now, activeEnds) // graceEnds field re-used for start time
+
+        _state.value = newState
+        scope.launch { store.write(newState) }
+        scheduleAlarm(activeEnds, ACTION_BREAK_ENDS, REQUEST_CODE_ACTIVE)
     }
 
     /** Only permitted when strict mode is off; strict mode is enforced by the caller (UI). */
     fun cancelBreak() {
+        val now = System.currentTimeMillis()
+        val current = _state.value
+        
+        if (current.phase == BreakPhase.ACTIVE) {
+            val startTime = current.graceEndsAtEpochMs
+            val elapsed = now - startTime
+            if (elapsed > 0) {
+                scope.launch {
+                    BreakFreeApplication.from(appContext).settingsDataStore.recordBreakCompletion(elapsed)
+                }
+            }
+        }
+
         cancelAlarm(REQUEST_CODE_GRACE)
         cancelAlarm(REQUEST_CODE_ACTIVE)
         _state.value = PersistedBreakState(BreakPhase.NONE, 0L, 0L)
@@ -96,14 +126,25 @@ class BreakStateManager(
         val now = System.currentTimeMillis()
         val current = _state.value
         if (current.phase == BreakPhase.GRACE) {
-            val next = effective(current, now)
-            _state.value = next
-            scope.launch { store.write(next) }
+            val newState = current.copy(phase = BreakPhase.CHALLENGE)
+            _state.value = newState
+            scope.launch { store.write(newState) }
         }
     }
 
     /** Called by BreakExpiryReceiver when the active-break alarm fires. */
     fun onBreakExpiredAlarm() {
+        val now = System.currentTimeMillis()
+        val current = _state.value
+        if (current.phase == BreakPhase.ACTIVE) {
+            val startTime = current.graceEndsAtEpochMs
+            val elapsed = now - startTime
+            if (elapsed > 0) {
+                scope.launch {
+                    BreakFreeApplication.from(appContext).settingsDataStore.recordBreakCompletion(elapsed)
+                }
+            }
+        }
         cancelBreak()
     }
 

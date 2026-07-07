@@ -181,6 +181,21 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
         val current = localBlockedPackages.value.toMutableSet()
         if (blocked) current.add(app.packageName) else current.remove(app.packageName)
         localBlockedPackages.value = current
+        
+        // Save immediately to repository so other screens (like Home) update
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                if (blocked) {
+                    breakFreeApp.repository.addApp(app.packageName, app.appName)
+                } else {
+                    breakFreeApp.repository.removeApp(app.packageName)
+                }
+                // Also update the metadata cache
+                breakFreeApp.appRepository.updateBlockedStatus(localBlockedPackages.value)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to toggle app in database", e)
+            }
+        }
     }
     
     fun toggleFavorite(app: AppInfo) {
@@ -195,24 +210,7 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         super.onCleared()
-        val finalBlocked = localBlockedPackages.value
-        val toAdd = finalBlocked - initialBlockedPackages
-        val toRemove = initialBlockedPackages - finalBlocked
-
-        val app = getApplication<Application>() as BreakFreeApplication
-        
-        app.applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                toRemove.forEach { app.repository.removeApp(it) }
-                toAdd.forEach { pkg ->
-                    val name = appRepository.apps.value.find { it.packageName == pkg }?.appName ?: pkg
-                    app.repository.addApp(pkg, name)
-                }
-                // Update the metadata cache with the final blocked status
-                app.appRepository.updateBlockedStatus(finalBlocked)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to save blocked apps in onCleared", e)
-            }
-        }
+        // No longer strictly necessary as we save immediately now,
+        // but good as a final sync if needed.
     }
 }

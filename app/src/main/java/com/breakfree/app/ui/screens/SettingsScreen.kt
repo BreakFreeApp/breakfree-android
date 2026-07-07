@@ -1,10 +1,15 @@
 package com.breakfree.app.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -18,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.breakfree.app.data.settings.AppTheme
 import com.breakfree.app.ui.SettingsViewModel
 import com.breakfree.app.ui.components.SearchTopAppBar
 
@@ -51,17 +57,39 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
 
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Strict mode", style = MaterialTheme.typography.titleSmall)
+                    Text("Break Notification", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Breaks can't be cancelled early once requested.",
+                        "Show a persistent notification with a countdown during an active break.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
-                Switch(checked = state.strictMode, onCheckedChange = { viewModel.setStrictMode(it) })
+                Switch(
+                    checked = state.showBreakNotification,
+                    onCheckedChange = { viewModel.setShowBreakNotification(it) }
+                )
             }
+
+            Text("Appearance", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AppTheme.values().forEach { theme ->
+                    val selected = state.theme == theme
+                    Button(
+                        onClick = { viewModel.setTheme(theme) },
+                        modifier = Modifier.weight(1f),
+                        colors = if (selected) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors()
+                    ) {
+                        Text(theme.name.lowercase().replaceFirstChar { it.uppercase() })
+                    }
+                }
+            }
+
         }
     }
 }

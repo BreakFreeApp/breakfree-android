@@ -2,6 +2,7 @@ package com.breakfree.app.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,11 +63,12 @@ fun AppPickerScreen(onBack: () -> Unit, viewModel: AppPickerViewModel = viewMode
         topBar = {
             Column {
                 SearchTopAppBar(
-                    title = "Blocked apps",
+                    title = "Apps",
                     searchQuery = state.searchQuery,
                     onSearchQueryChange = { viewModel.onSearchQueryChanged(it) },
                     onBack = onBack,
                     placeholder = "Search apps...",
+                    showLogo = false,
                     actions = {
                         IconButton(onClick = { viewModel.toggleSortOrder() }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -158,12 +160,13 @@ private fun AppItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable { onToggleBlocked(!isBlocked) }
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
                 checked = isBlocked,
-                onCheckedChange = onToggleBlocked
+                onCheckedChange = null // Handled by Row clickable
             )
             Spacer(modifier = Modifier.width(8.dp))
             Image(

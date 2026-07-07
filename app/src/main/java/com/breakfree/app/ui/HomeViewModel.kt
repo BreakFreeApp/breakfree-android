@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.breakfree.app.BreakFreeApplication
+import com.breakfree.app.data.db.entities.BlockedDomain
 import com.breakfree.app.data.settings.AppDefaults
 import com.breakfree.app.data.settings.BreakDurationOption
 import com.breakfree.app.data.settings.BreakPhase
@@ -24,9 +25,15 @@ data class HomeUiState(
     val activeSecondsRemaining: Int = 0,
     val durationOptions: List<BreakDurationOption> = AppDefaults.DURATION_OPTIONS,
     val gracePeriodSeconds: Int = AppDefaults.GRACE_PERIOD_SECONDS,
-    val strictMode: Boolean = AppDefaults.STRICT_MODE,
     val blockedAppCount: Int = 0,
-    val blockedDomainCount: Int = 0
+    val blockedDomainCount: Int = 0,
+    val lastBreakRequestTime: Long = 0,
+    val totalBreaksCount: Int = 0,
+    val totalBreakTimeMs: Long = 0,
+    val weeklyUsageMs: Long = 0,
+    val targetDailyHours: Int = 4,
+    val apps: List<com.breakfree.app.data.model.AppInfo> = emptyList(),
+    val ticker: Int = 0
 )
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
@@ -39,17 +46,31 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         breakFreeApp.breakStateManager.state,
         breakFreeApp.settingsDataStore.durationOptions,
         breakFreeApp.settingsDataStore.gracePeriodSeconds,
-        breakFreeApp.settingsDataStore.strictMode,
         breakFreeApp.repository.observeBlockedApps(),
-        breakFreeApp.repository.observeBlockedDomains()
+        breakFreeApp.repository.observeBlockedDomains(),
+        breakFreeApp.settingsDataStore.lastBreakRequestTime,
+        breakFreeApp.settingsDataStore.totalBreaksCount,
+        breakFreeApp.settingsDataStore.totalBreakTimeMs,
+        breakFreeApp.appRepository.apps,
+        breakFreeApp.settingsDataStore.targetDailyHours,
+        tickerState.flow
     ) { values ->
         try {
             val breakState = values[0] as? PersistedBreakState ?: PersistedBreakState(BreakPhase.NONE, 0, 0)
             val durationOptions = (values[1] as? List<*>)?.filterIsInstance<BreakDurationOption>() ?: emptyList()
             val gracePeriod = values[2] as? Int ?: AppDefaults.GRACE_PERIOD_SECONDS
-            val strict = values[3] as? Boolean ?: AppDefaults.STRICT_MODE
-            val apps = values[4] as? List<*> ?: emptyList<Any>()
-            val domains = values[5] as? List<*> ?: emptyList<Any>()
+            val apps = values[3] as? List<*> ?: emptyList<Any>()
+            val domains = (values[4] as? List<*>)?.filterIsInstance<BlockedDomain>() ?: emptyList()
+            val blockedDomainCount = domains.count { it.isBlocked }
+
+            val lastBreak = values[5] as? Long ?: 0L
+            val totalBreaks = values[6] as? Int ?: 0
+            val totalBreakTime = values[7] as? Long ?: 0L
+            val appList = (values[8] as? List<*>)?.filterIsInstance<com.breakfree.app.data.model.AppInfo>() ?: emptyList()
+            val target = 1
+            val tick = values[10] as? Int ?: 0
+            
+            val weeklyUsage = appList.sumOf { it.usageTimeMs }
 
             val now = System.currentTimeMillis()
             HomeUiState(
@@ -58,9 +79,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 activeSecondsRemaining = ((breakState.activeEndsAtEpochMs - now) / 1000).coerceAtLeast(0).toInt(),
                 durationOptions = durationOptions,
                 gracePeriodSeconds = gracePeriod,
-                strictMode = strict,
                 blockedAppCount = apps.size,
-                blockedDomainCount = domains.size
+                blockedDomainCount = blockedDomainCount,
+                lastBreakRequestTime = lastBreak,
+                totalBreaksCount = totalBreaks,
+                totalBreakTimeMs = totalBreakTime,
+                weeklyUsageMs = weeklyUsage,
+                targetDailyHours = target,
+                apps = appList,
+                ticker = tick
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error in combine block", e)
@@ -91,18 +118,26 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestBreak(durationSeconds: Int) {
         viewModelScope.launch {
-            breakFreeApp.breakStateManager.requestBreak(durationSeconds, uiState.value.gracePeriodSeconds)
+            val success = breakFreeApp.breakStateManager.requestBreak(durationSeconds, uiState.value.gracePeriodSeconds)
+            if (success) {
+                breakFreeApp.settingsDataStore.recordBreakRequest()
+            }
+        }
+    }
+
+    fun confirmBreak() {
+        viewModelScope.launch {
+            breakFreeApp.breakStateManager.confirmBreak()
         }
     }
 
     fun cancelBreak() {
-        if (uiState.value.strictMode) return // not allowed to bail early in strict mode
         breakFreeApp.breakStateManager.cancelBreak()
     }
 
     /** Trivial internal ticker just to force uiState recomposition on a 1s cadence. */
     private class MutableTicker {
-        private val flow = kotlinx.coroutines.flow.MutableStateFlow(0)
+        val flow = kotlinx.coroutines.flow.MutableStateFlow(0)
         fun tick() { flow.value += 1 }
     }
 }

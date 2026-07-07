@@ -6,23 +6,57 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.breakfree.app.data.settings.AppTheme
 
-private val AccentGreen = Color(0xFF2ECC71)
-private val DarkBackground = Color(0xFF0E0E10)
-private val DarkSurface = Color(0xFF1A1A1D)
+private val White = Color(0xFFFFFFFF)
+private val VeryDarkGray = Color(0xFF121212)
+private val GrayDark = Color(0xFF1E1E1E)
+private val GrayLight = Color(0xFFF2F2F7)
 
 private val DarkColors = darkColorScheme(
-    primary = AccentGreen,
-    background = DarkBackground,
-    surface = DarkSurface
+    primary = White,
+    onPrimary = VeryDarkGray,
+    primaryContainer = Color(0xFF2C2C2E),
+    onPrimaryContainer = White,
+    background = VeryDarkGray,
+    onBackground = White,
+    surface = VeryDarkGray,
+    onSurface = White,
+    secondary = Color.LightGray,
+    onSecondary = VeryDarkGray,
+    secondaryContainer = Color(0xFF1C1C1E),
+    onSecondaryContainer = White,
+    surfaceVariant = Color(0xFF1C1C1E),
+    onSurfaceVariant = Color.LightGray
 )
 
 private val LightColors = lightColorScheme(
-    primary = AccentGreen
+    primary = VeryDarkGray,
+    onPrimary = White,
+    primaryContainer = Color(0xFFE5E5EA),
+    onPrimaryContainer = VeryDarkGray,
+    background = White,
+    onBackground = VeryDarkGray,
+    surface = White,
+    onSurface = VeryDarkGray,
+    secondary = Color.DarkGray,
+    onSecondary = White,
+    secondaryContainer = Color(0xFFF2F2F7),
+    onSecondaryContainer = VeryDarkGray,
+    surfaceVariant = Color(0xFFF2F2F7),
+    onSurfaceVariant = Color.DarkGray
 )
 
 @Composable
-fun BreakFreeTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) DarkColors else LightColors
+fun BreakFreeTheme(
+    appTheme: AppTheme = AppTheme.SYSTEM,
+    content: @Composable () -> Unit
+) {
+    val darkTheme = when (appTheme) {
+        AppTheme.SYSTEM -> isSystemInDarkTheme()
+        AppTheme.LIGHT -> false
+        AppTheme.DARK -> true
+    }
+    val colors = if (darkTheme) DarkColors else LightColors
     MaterialTheme(colorScheme = colors, content = content)
 }

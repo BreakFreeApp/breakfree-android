@@ -12,7 +12,6 @@ object AppDefaults {
     )
 
     const val GRACE_PERIOD_SECONDS = 30
-    const val STRICT_MODE = true
 
     val DOOM_SCROLLING_DOMAINS = listOf(
         "tiktok.com",

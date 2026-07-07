@@ -1,8 +1,11 @@
 package com.breakfree.app.ui.components
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -21,9 +24,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.breakfree.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +40,7 @@ fun SearchTopAppBar(
     onBack: (() -> Unit)? = null,
     placeholder: String = "Search...",
     searchEnabled: Boolean = true,
+    showLogo: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     var isSearchExpanded by remember { mutableStateOf(false) }
@@ -67,7 +74,19 @@ fun SearchTopAppBar(
                     )
                 )
             } else {
-                Text(title)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (showLogo) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .padding(end = 8.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                }
             }
         },
         navigationIcon = {

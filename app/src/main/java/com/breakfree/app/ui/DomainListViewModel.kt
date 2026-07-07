@@ -50,7 +50,7 @@ class DomainListViewModel(app: Application) : AndroidViewModel(app) {
         val suggestedDomains = AppDefaults.DOOM_SCROLLING_DOMAINS
             .filter { domainStr -> domains.none { it.domain == domainStr } }
             .filter { it.contains(query, ignoreCase = true) }
-            .map { BlockedDomain(it, isFavorite = true, isBlocked = false) }
+            .map { BlockedDomain(it, isFavorite = false, isBlocked = false) }
 
         val allToConsider = filtered + suggestedDomains
         
