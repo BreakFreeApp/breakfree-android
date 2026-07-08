@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -27,10 +28,13 @@ data class HomeUiState(
     val gracePeriodSeconds: Int = AppDefaults.GRACE_PERIOD_SECONDS,
     val blockedAppCount: Int = 0,
     val blockedDomainCount: Int = 0,
-    val lastBreakRequestTime: Long = 0,
-    val totalBreaksCount: Int = 0,
-    val totalBreakTimeMs: Long = 0,
-    val weeklyUsageMs: Long = 0,
+    
+    // Statistics for the last 7 days (Daily Averages)
+    val avgTimeBetweenBreaksMs: Long = 0,
+    val avgDailyBreaksCount: Double = 0.0,
+    val avgDailyBreakTimeMs: Long = 0,
+    val avgDailyScreenTimeMs: Long = 0,
+    
     val targetDailyHours: Int = 4,
     val apps: List<com.breakfree.app.data.model.AppInfo> = emptyList(),
     val ticker: Int = 0
@@ -48,7 +52,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         breakFreeApp.settingsDataStore.gracePeriodSeconds,
         breakFreeApp.repository.observeBlockedApps(),
         breakFreeApp.repository.observeBlockedDomains(),
-        breakFreeApp.settingsDataStore.lastBreakRequestTime,
         breakFreeApp.settingsDataStore.totalBreaksCount,
         breakFreeApp.settingsDataStore.totalBreakTimeMs,
         breakFreeApp.appRepository.apps,
@@ -59,18 +62,31 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val breakState = values[0] as? PersistedBreakState ?: PersistedBreakState(BreakPhase.NONE, 0, 0)
             val durationOptions = (values[1] as? List<*>)?.filterIsInstance<BreakDurationOption>() ?: emptyList()
             val gracePeriod = values[2] as? Int ?: AppDefaults.GRACE_PERIOD_SECONDS
-            val apps = values[3] as? List<*> ?: emptyList<Any>()
+            val blockedAppsList = values[3] as? List<*> ?: emptyList<Any>()
             val domains = (values[4] as? List<*>)?.filterIsInstance<BlockedDomain>() ?: emptyList()
             val blockedDomainCount = domains.count { it.isBlocked }
 
-            val lastBreak = values[5] as? Long ?: 0L
-            val totalBreaks = values[6] as? Int ?: 0
-            val totalBreakTime = values[7] as? Long ?: 0L
-            val appList = (values[8] as? List<*>)?.filterIsInstance<com.breakfree.app.data.model.AppInfo>() ?: emptyList()
-            val target = 1
-            val tick = values[10] as? Int ?: 0
+            val totalBreaks = values[5] as? Int ?: 0
+            val totalBreakTime = values[6] as? Long ?: 0L
+            val appList = (values[7] as? List<*>)?.filterIsInstance<com.breakfree.app.data.model.AppInfo>() ?: emptyList()
+            val target = values[8] as? Int ?: 4
+            val tick = values[9] as? Int ?: 0
             
-            val weeklyUsage = appList.sumOf { it.usageTimeMs }
+            // Weekly total screen time
+            val weeklyUsageMs = appList.sumOf { it.usageTimeMs }
+            
+            // Last 7 days averages
+            val days = 7.0
+            val avgDailyScreenTime = (weeklyUsageMs / days).toLong()
+            val avgDailyBreaks = totalBreaks / days
+            val avgDailyBreakTime = (totalBreakTime / days).toLong()
+            
+            // Average time between breaks calculation (simplistic over 7 days)
+            // 7 days in Ms minus total break time, divided by number of breaks
+            val totalWeekMs = 7 * 24 * 60 * 60 * 1000L
+            val timeBetweenBreaks = if (totalBreaks > 0) {
+                (totalWeekMs - totalBreakTime) / totalBreaks
+            } else 0L
 
             val now = System.currentTimeMillis()
             HomeUiState(
@@ -79,12 +95,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 activeSecondsRemaining = ((breakState.activeEndsAtEpochMs - now) / 1000).coerceAtLeast(0).toInt(),
                 durationOptions = durationOptions,
                 gracePeriodSeconds = gracePeriod,
-                blockedAppCount = apps.size,
+                blockedAppCount = blockedAppsList.size,
                 blockedDomainCount = blockedDomainCount,
-                lastBreakRequestTime = lastBreak,
-                totalBreaksCount = totalBreaks,
-                totalBreakTimeMs = totalBreakTime,
-                weeklyUsageMs = weeklyUsage,
+                avgTimeBetweenBreaksMs = timeBetweenBreaks,
+                avgDailyBreaksCount = avgDailyBreaks,
+                avgDailyBreakTimeMs = avgDailyBreakTime,
+                avgDailyScreenTimeMs = avgDailyScreenTime,
                 targetDailyHours = target,
                 apps = appList,
                 ticker = tick
@@ -133,6 +149,30 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelBreak() {
         breakFreeApp.breakStateManager.cancelBreak()
+    }
+
+    fun onUsagePermissionGranted() {
+        viewModelScope.launch {
+            // Trigger refresh of stats
+            breakFreeApp.appRepository.refreshCache(force = true)
+            
+            // Check if this is the "first run" for blocking
+            val blockedApps = breakFreeApp.repository.observeBlockedApps().first()
+            val apps = breakFreeApp.appRepository.apps.value
+            val favoriteApps = apps.filter { it.isFavorite }
+            
+            if (blockedApps.isEmpty() && favoriteApps.isEmpty()) {
+                // Favorite top 5 apps (not yet blocked)
+                val topApps = apps
+                    .filter { !it.isBlocked }
+                    .sortedByDescending { it.usageTimeMs }
+                    .take(5)
+                
+                topApps.forEach { app ->
+                    breakFreeApp.appRepository.toggleFavorite(app.packageName)
+                }
+            }
+        }
     }
 
     /** Trivial internal ticker just to force uiState recomposition on a 1s cadence. */

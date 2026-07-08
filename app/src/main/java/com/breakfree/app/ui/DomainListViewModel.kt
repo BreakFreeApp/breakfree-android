@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 
 enum class DomainSortOrder {
     ALPHABETICAL,
@@ -22,6 +25,7 @@ enum class DomainSortOrder {
 data class DomainListUiState(
     val selectedDomains: List<BlockedDomain> = emptyList(),
     val otherDomains: List<BlockedDomain> = emptyList(),
+    val lockedDomains: Set<String> = emptySet(),
     val searchQuery: String = "",
     val sortOrder: DomainSortOrder = DomainSortOrder.ALPHABETICAL,
     val isAscending: Boolean = true,
@@ -37,14 +41,20 @@ class DomainListViewModel(app: Application) : AndroidViewModel(app) {
     private val searchQuery = MutableStateFlow("")
     private val sortOrder = MutableStateFlow(DomainSortOrder.ALPHABETICAL)
     private val isAscending = MutableStateFlow(true)
+    private val lockedDomains = MutableStateFlow<Set<String>>(emptySet())
+
+    private val _toastMessage = MutableSharedFlow<String>()
+    val toastMessage = _toastMessage.asSharedFlow()
+
+    private val domainsFlow = repository.observeBlockedDomains()
+    private val breakStateFlow = breakStateManager.state
 
     val uiState: StateFlow<DomainListUiState> = combine(
-        repository.observeBlockedDomains(),
-        searchQuery,
-        sortOrder,
-        isAscending,
-        breakStateManager.state
-    ) { domains, query, order, ascending, breakState ->
+        combine(domainsFlow, lockedDomains, searchQuery) { d, l, q -> Triple(d, l, q) },
+        combine(sortOrder, isAscending, breakStateFlow) { o, a, s -> Triple(o, a, s) }
+    ) { group1, group2 ->
+        val (domains, locked, query) = group1
+        val (order, ascending, breakState) = group2
         val filtered = if (query.isBlank()) {
             domains
         } else {
@@ -74,12 +84,26 @@ class DomainListViewModel(app: Application) : AndroidViewModel(app) {
         DomainListUiState(
             selectedDomains = sort(selected),
             otherDomains = sort(others),
+            lockedDomains = locked,
             searchQuery = query,
             sortOrder = order,
             isAscending = ascending,
             isBreakActive = breakState.phase == BreakPhase.ACTIVE
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DomainListUiState())
+
+    init {
+        viewModelScope.launch {
+            try {
+                // Wait for the first emission of domains to determine which ones are "locked" for this session
+                val initialDomains = repository.observeBlockedDomains().first()
+                val selected = initialDomains.filter { it.isBlocked || it.isFavorite }.map { it.domain }.toSet()
+                lockedDomains.value = selected
+            } catch (e: Exception) {
+                // Fallback or log
+            }
+        }
+    }
 
     fun onSearchQueryChanged(query: String) {
         searchQuery.value = query
@@ -104,12 +128,35 @@ class DomainListViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleBlock(domain: BlockedDomain, blocked: Boolean) {
+        val isLocked = domain.domain in lockedDomains.value
+        val isBreakActive = uiState.value.isBreakActive
+        
+        if (!blocked && isLocked && !isBreakActive) {
+            viewModelScope.launch { _toastMessage.emit("removal is allowed only during breaks") }
+            return
+        }
+
         viewModelScope.launch {
             repository.toggleDomainBlock(domain.domain, blocked)
+            if (blocked) {
+                // Requirement: when an entry is checked, also the fev button is set to on.
+                if (!domain.isFavorite) {
+                    repository.toggleDomainFavorite(domain.domain)
+                }
+            }
         }
     }
 
     fun toggleFavorite(domain: BlockedDomain) {
+        val isLocked = domain.domain in lockedDomains.value
+        val isBreakActive = uiState.value.isBreakActive
+        val requestedFavorite = !domain.isFavorite
+        
+        if (!requestedFavorite && isLocked && !isBreakActive) {
+            viewModelScope.launch { _toastMessage.emit("removal is allowed only during breaks") }
+            return
+        }
+
         viewModelScope.launch {
             repository.toggleDomainFavorite(domain.domain)
         }

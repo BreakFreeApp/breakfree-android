@@ -1,5 +1,6 @@
 package com.breakfree.app.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -50,24 +52,31 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.breakfree.app.data.model.AppInfo
-import com.breakfree.app.ui.AppPickerViewModel
+import com.breakfree.app.ui.AppListViewModel
 import com.breakfree.app.ui.SortOrder
 import com.breakfree.app.ui.components.SearchTopAppBar
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppPickerScreen(
+fun AppListScreen(
     onBack: () -> Unit,
-    onNavigateToBreak: () -> Unit,
-    viewModel: AppPickerViewModel = viewModel()
+    viewModel: AppListViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    LaunchedEffect(viewModel.toastMessage) {
+        viewModel.toastMessage.collectLatest { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         topBar = {
             Column {
                 SearchTopAppBar(
-                    title = "Apps",
+                    title = "App List",
                     searchQuery = state.searchQuery,
                     onSearchQueryChange = { viewModel.onSearchQueryChanged(it) },
                     onBack = onBack,
@@ -117,12 +126,7 @@ fun AppPickerScreen(
                             app = app,
                             isBlocked = isBlocked,
                             onToggleBlocked = { requestedBlocked ->
-                                // Allowing adding (true) but restricting removing (false)
-                                if (!requestedBlocked && !state.isBreakActive) {
-                                    onNavigateToBreak()
-                                } else {
-                                    viewModel.toggle(app, requestedBlocked)
-                                }
+                                viewModel.toggle(app, requestedBlocked)
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(app) }
                         )
@@ -138,12 +142,7 @@ fun AppPickerScreen(
                             app = app,
                             isBlocked = false,
                             onToggleBlocked = { requestedBlocked ->
-                                // Allowing adding (true) but restricting removing (false)
-                                if (!requestedBlocked && !state.isBreakActive) {
-                                    onNavigateToBreak()
-                                } else {
-                                    viewModel.toggle(app, requestedBlocked)
-                                }
+                                viewModel.toggle(app, requestedBlocked)
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(app) }
                         )

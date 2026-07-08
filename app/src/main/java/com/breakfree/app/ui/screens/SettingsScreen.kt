@@ -37,7 +37,8 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
             SearchTopAppBar(
                 title = "Settings",
                 onBack = onBack,
-                searchEnabled = false
+                searchEnabled = false,
+                showLogo = false
             )
         }
     ) { padding ->
