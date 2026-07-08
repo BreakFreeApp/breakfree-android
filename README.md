@@ -1,12 +1,11 @@
 # BreakFree
 
+Add extra steps and frictions to your bad habits.
+
 An open-source, self-imposed focus / app-blocker for Android. Apps and domains you
 add are blocked **by default**. To get through, you open BreakFree, request a break,
 wait out a grace period (friction against impulsive unblocking), and get a timed
 window of access before blocking resumes automatically.
-
-This is a functionality clone (architecture + UX flow), not a copy of anyone's
-branding, icons, or code — built from scratch.
 
 ## How it works
 
