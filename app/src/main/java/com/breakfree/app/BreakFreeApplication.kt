@@ -10,6 +10,7 @@ import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.data.settings.BreakStateStore
 import com.breakfree.app.data.settings.SettingsDataStore
 import com.breakfree.app.service.BreakNotificationManager
+import com.breakfree.app.sync.AssetSyncWorker
 import com.breakfree.app.ui.image.AppIconFetcher
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -55,6 +56,7 @@ class BreakFreeApplication : Application(), ImageLoaderFactory {
         
         // Initialize suggested domains on first run
         applicationScope.launch {
+            AssetSyncWorker.enqueuePeriodic(this@BreakFreeApplication)
             val domains = repository.observeBlockedDomains().first()
             if (domains.isEmpty()) {
                 AppDefaults.DOOM_SCROLLING_DOMAINS.forEach { domain ->
@@ -72,11 +74,12 @@ class BreakFreeApplication : Application(), ImageLoaderFactory {
                 .collect { (state, show) ->
                     if (show && state.phase == BreakPhase.ACTIVE) {
                         // Start a local loop to update every second while active
-                        while (state.phase == BreakPhase.ACTIVE) {
-                            breakNotificationManager.updateNotification(state)
+                        while (true) {
+                            val currentState = breakStateManager.state.value
+                            if (currentState.phase != BreakPhase.ACTIVE) break
+                            
+                            breakNotificationManager.updateNotification(currentState)
                             delay(1000)
-                            // Re-check state from manager to see if it changed
-                            if (breakStateManager.state.value.phase != BreakPhase.ACTIVE) break
                         }
                     } else {
                         breakNotificationManager.cancelNotification()

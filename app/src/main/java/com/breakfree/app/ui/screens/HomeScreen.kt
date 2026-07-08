@@ -57,15 +57,21 @@ fun HomeScreen(
     onEnableAccessibility: () -> Unit,
     onEnableUsageStats: () -> Unit,
     onEnableOverlay: () -> Unit,
+    onEnableNotifications: () -> Unit,
     isAccessibilityEnabled: () -> Boolean,
     isUsageStatsEnabled: () -> Boolean,
     isOverlayEnabled: () -> Boolean,
+    isNotificationsEnabled: () -> Boolean,
+    refreshTrigger: Int = 0,
     viewModel: HomeViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
-    val accessibilityEnabled = isAccessibilityEnabled()
-    val usageStatsEnabled = isUsageStatsEnabled()
-    val overlayEnabled = isOverlayEnabled()
+    
+    // Use remember(refreshTrigger) to ensure these values are re-calculated when the trigger changes
+    val accessibilityEnabled = remember(refreshTrigger) { isAccessibilityEnabled() }
+    val usageStatsEnabled = remember(refreshTrigger) { isUsageStatsEnabled() }
+    val overlayEnabled = remember(refreshTrigger) { isOverlayEnabled() }
+    val notificationsEnabled = remember(refreshTrigger) { isNotificationsEnabled() }
 
     Scaffold(
         topBar = {
@@ -118,9 +124,24 @@ fun HomeScreen(
                 )
             }
 
+            if (!notificationsEnabled) {
+                SetupCard(
+                    title = "Break timer needs Notification permission",
+                    body = "Required to show a countdown while a break is active.",
+                    actionLabel = "Enable",
+                    onAction = onEnableNotifications
+                )
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = onOpenBreakManagement,
+                onClick = {
+                    if (state.phase == BreakPhase.ACTIVE) {
+                        viewModel.cancelBreak()
+                    } else {
+                        onOpenBreakManagement()
+                    }
+                },
                 colors = if (state.phase == BreakPhase.ACTIVE) {
                     CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                 } else {

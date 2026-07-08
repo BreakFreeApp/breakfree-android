@@ -9,11 +9,10 @@ window of access before blocking resumes automatically.
 
 ## How it works
 
-### App blocking
-An `AccessibilityService` listens for window-state-change events (fires the instant
-the foreground app changes). If the new foreground app is on the blocked list and
-there's no active break, a full-screen interstitial (`BlockOverlayActivity`) is
-launched immediately on top of it.
+### App and Domain blocking
+An `AccessibilityService` listens for window-state-change and content-change events.
+- **Apps**: If the new foreground app is on the blocked list and there's no active break, a full-screen interstitial (`BlockOverlayActivity`) or overlay is shown.
+- **Domains**: The service monitors the URL/address bar of common browsers (Chrome, Firefox, etc.). If a blocked domain is detected and no break is active, the overlay is shown to block access to the website.
 
 ### Domain blocking (WIP)
 Leverages the Accessebility navigation for the UI, intercepts the URL bar for known browsers and check block forbidden domains.
@@ -22,4 +21,3 @@ The event is triggered at several events UI Events.
 
 ## License 
 GPLv2
-

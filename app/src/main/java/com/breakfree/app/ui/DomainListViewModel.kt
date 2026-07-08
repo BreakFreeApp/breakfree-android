@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.breakfree.app.BreakFreeApplication
 import com.breakfree.app.data.db.entities.BlockedDomain
 import com.breakfree.app.data.settings.AppDefaults
+import com.breakfree.app.data.settings.BreakPhase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,13 +24,16 @@ data class DomainListUiState(
     val otherDomains: List<BlockedDomain> = emptyList(),
     val searchQuery: String = "",
     val sortOrder: DomainSortOrder = DomainSortOrder.ALPHABETICAL,
-    val isAscending: Boolean = true
+    val isAscending: Boolean = true,
+    val isBreakActive: Boolean = false
 )
 
 class DomainListViewModel(app: Application) : AndroidViewModel(app) {
 
     private val breakFreeApp = BreakFreeApplication.from(app)
     private val repository = breakFreeApp.repository
+    private val breakStateManager = breakFreeApp.breakStateManager
+    
     private val searchQuery = MutableStateFlow("")
     private val sortOrder = MutableStateFlow(DomainSortOrder.ALPHABETICAL)
     private val isAscending = MutableStateFlow(true)
@@ -38,8 +42,9 @@ class DomainListViewModel(app: Application) : AndroidViewModel(app) {
         repository.observeBlockedDomains(),
         searchQuery,
         sortOrder,
-        isAscending
-    ) { domains, query, order, ascending ->
+        isAscending,
+        breakStateManager.state
+    ) { domains, query, order, ascending, breakState ->
         val filtered = if (query.isBlank()) {
             domains
         } else {
@@ -71,7 +76,8 @@ class DomainListViewModel(app: Application) : AndroidViewModel(app) {
             otherDomains = sort(others),
             searchQuery = query,
             sortOrder = order,
-            isAscending = ascending
+            isAscending = ascending,
+            isBreakActive = breakState.phase == BreakPhase.ACTIVE
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DomainListUiState())
 

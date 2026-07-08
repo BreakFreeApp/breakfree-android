@@ -16,7 +16,8 @@ data class SettingsUiState(
     val theme: AppTheme = AppTheme.SYSTEM,
     val targetDailyHours: Int = 1,
     val weeklyAverageHours: Double = 0.0,
-    val showBreakNotification: Boolean = true
+    val showBreakNotification: Boolean = true,
+    val autoStopOnLockTimeoutMinutes: Int = 1
 )
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
@@ -27,11 +28,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         breakFreeApp.settingsDataStore.gracePeriodSeconds,
         breakFreeApp.settingsDataStore.theme,
         breakFreeApp.appRepository.apps,
-        breakFreeApp.settingsDataStore.showBreakNotification
-    ) { grace, theme, apps, showNotif ->
+        breakFreeApp.settingsDataStore.showBreakNotification,
+        breakFreeApp.settingsDataStore.autoStopOnLockTimeoutMinutes
+    ) { grace, theme, apps, showNotif, autoStop ->
         val totalWeeklyMs = apps.sumOf { it.usageTimeMs }
         val weeklyAverage = (totalWeeklyMs / (1000.0 * 3600.0 * 7.0))
-        SettingsUiState(grace, theme, 1, weeklyAverage, showNotif)
+        SettingsUiState(grace, theme, 1, weeklyAverage, showNotif, autoStop)
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
 
@@ -49,5 +51,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setShowBreakNotification(show: Boolean) {
         viewModelScope.launch { breakFreeApp.settingsDataStore.setShowBreakNotification(show) }
+    }
+
+    fun setAutoStopOnLockTimeout(minutes: Int) {
+        viewModelScope.launch { breakFreeApp.settingsDataStore.setAutoStopOnLockTimeoutMinutes(minutes) }
     }
 }

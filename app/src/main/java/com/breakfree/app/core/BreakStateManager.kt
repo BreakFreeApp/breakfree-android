@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import com.breakfree.app.BreakFreeApplication
 import com.breakfree.app.data.settings.BreakPhase
@@ -16,21 +17,24 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val ACTION_GRACE_ENDS = "com.breakfree.app.action.GRACE_ENDS"
 private const val ACTION_BREAK_ENDS = "com.breakfree.app.action.BREAK_ENDS"
+private const val ACTION_AUTO_STOP = "com.breakfree.app.action.AUTO_STOP"
 private const val REQUEST_CODE_GRACE = 1001
 private const val REQUEST_CODE_ACTIVE = 1002
+private const val REQUEST_CODE_AUTO_STOP = 1003
 
 /**
  * Owns the lifecycle of the single global break: NONE -> GRACE -> ACTIVE -> NONE.
  *
  * This is the one place that decides "is the user currently allowed through the
- * blockers right now" — both the AccessibilityService and the VpnService consult it.
- * State is persisted (via BreakStateStore/DataStore) so it survives process death,
- * and re-derived defensively from timestamps rather than trusting the stored phase
- * blindly, in case an AlarmManager callback was delayed (e.g. by Doze).
+ * blockers right now". State is persisted (via BreakStateStore/DataStore)
+ * so it survives process death, and re-derived defensively from timestamps 
+ * rather than trusting the stored phase blindly, in case an AlarmManager 
+ * callback was delayed (e.g. by Doze).
  */
 class BreakStateManager(
     context: Context,
@@ -49,6 +53,44 @@ class BreakStateManager(
                 _state.value = effective(persisted, System.currentTimeMillis())
             }
         }
+        registerScreenStateReceiver()
+    }
+
+    private fun registerScreenStateReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF -> handleScreenOff()
+                    Intent.ACTION_SCREEN_ON -> handleScreenOn()
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            appContext.registerReceiver(receiver, filter)
+        }
+    }
+
+    private fun handleScreenOff() {
+        val current = _state.value
+        if (current.phase != BreakPhase.ACTIVE) return
+
+        scope.launch {
+            val timeoutMinutes = BreakFreeApplication.from(appContext).settingsDataStore.autoStopOnLockTimeoutMinutes.first()
+            if (timeoutMinutes > 0) {
+                val atEpochMs = System.currentTimeMillis() + timeoutMinutes * 60 * 1000L
+                scheduleAlarm(atEpochMs, ACTION_AUTO_STOP, REQUEST_CODE_AUTO_STOP)
+            }
+        }
+    }
+
+    private fun handleScreenOn() {
+        cancelAlarm(REQUEST_CODE_AUTO_STOP, ACTION_AUTO_STOP)
     }
 
     /** Self-healing: derive the true phase from timestamps, not just the stored label. */
@@ -115,8 +157,9 @@ class BreakStateManager(
             }
         }
 
-        cancelAlarm(REQUEST_CODE_GRACE)
-        cancelAlarm(REQUEST_CODE_ACTIVE)
+        cancelAlarm(REQUEST_CODE_GRACE, ACTION_GRACE_ENDS)
+        cancelAlarm(REQUEST_CODE_ACTIVE, ACTION_BREAK_ENDS)
+        cancelAlarm(REQUEST_CODE_AUTO_STOP, ACTION_AUTO_STOP)
         _state.value = PersistedBreakState(BreakPhase.NONE, 0L, 0L)
         scope.launch { store.clear() }
     }
@@ -126,9 +169,14 @@ class BreakStateManager(
         val now = System.currentTimeMillis()
         val current = _state.value
         if (current.phase == BreakPhase.GRACE) {
-            val newState = current.copy(phase = BreakPhase.CHALLENGE)
+            // Auto-confirm break when grace period ends
+            val durationMs = current.activeEndsAtEpochMs // stored duration
+            val activeEnds = now + durationMs
+            val newState = PersistedBreakState(BreakPhase.ACTIVE, now, activeEnds)
+            
             _state.value = newState
             scope.launch { store.write(newState) }
+            scheduleAlarm(activeEnds, ACTION_BREAK_ENDS, REQUEST_CODE_ACTIVE)
         }
     }
 
@@ -153,17 +201,15 @@ class BreakStateManager(
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val pendingIntent = PendingIntent.getBroadcast(appContext, requestCode, intent, flags)
 
-        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            alarmManager.canScheduleExactAlarms()
-        if (canExact) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atEpochMs, pendingIntent)
-        } else {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atEpochMs, pendingIntent)
-        }
+        // Using setAndAllowWhileIdle for inexact but power-efficient alarms.
+        // Precision is not critical (a few seconds delay is acceptable), and 
+        // it avoids the need for the restricted SCHEDULE_EXACT_ALARM permission.
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atEpochMs, pendingIntent)
     }
 
-    private fun cancelAlarm(requestCode: Int) {
+    private fun cancelAlarm(requestCode: Int, action: String? = null) {
         val intent = Intent(appContext, BreakExpiryReceiver::class.java)
+        if (action != null) intent.action = action
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val pendingIntent = PendingIntent.getBroadcast(appContext, requestCode, intent, flags)
         alarmManager.cancel(pendingIntent)
@@ -172,5 +218,6 @@ class BreakStateManager(
     companion object {
         const val ACTION_GRACE_ENDS_INTENT = ACTION_GRACE_ENDS
         const val ACTION_BREAK_ENDS_INTENT = ACTION_BREAK_ENDS
+        const val ACTION_AUTO_STOP_INTENT = ACTION_AUTO_STOP
     }
 }

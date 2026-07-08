@@ -11,7 +11,7 @@ object AppDefaults {
         BreakDurationOption("2h", 7200)
     )
 
-    const val GRACE_PERIOD_SECONDS = 30
+    const val GRACE_PERIOD_SECONDS = 10
 
     val DOOM_SCROLLING_DOMAINS = listOf(
         "tiktok.com",

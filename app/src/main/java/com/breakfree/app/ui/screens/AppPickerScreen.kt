@@ -56,7 +56,11 @@ import com.breakfree.app.ui.components.SearchTopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppPickerScreen(onBack: () -> Unit, viewModel: AppPickerViewModel = viewModel()) {
+fun AppPickerScreen(
+    onBack: () -> Unit,
+    onNavigateToBreak: () -> Unit,
+    viewModel: AppPickerViewModel = viewModel()
+) {
     val state by viewModel.uiState.collectAsState()
 
     Scaffold(
@@ -112,7 +116,14 @@ fun AppPickerScreen(onBack: () -> Unit, viewModel: AppPickerViewModel = viewMode
                         AppItem(
                             app = app,
                             isBlocked = isBlocked,
-                            onToggleBlocked = { viewModel.toggle(app, it) },
+                            onToggleBlocked = { requestedBlocked ->
+                                // Allowing adding (true) but restricting removing (false)
+                                if (!requestedBlocked && !state.isBreakActive) {
+                                    onNavigateToBreak()
+                                } else {
+                                    viewModel.toggle(app, requestedBlocked)
+                                }
+                            },
                             onToggleFavorite = { viewModel.toggleFavorite(app) }
                         )
                     }
@@ -126,7 +137,14 @@ fun AppPickerScreen(onBack: () -> Unit, viewModel: AppPickerViewModel = viewMode
                         AppItem(
                             app = app,
                             isBlocked = false,
-                            onToggleBlocked = { viewModel.toggle(app, it) },
+                            onToggleBlocked = { requestedBlocked ->
+                                // Allowing adding (true) but restricting removing (false)
+                                if (!requestedBlocked && !state.isBreakActive) {
+                                    onNavigateToBreak()
+                                } else {
+                                    viewModel.toggle(app, requestedBlocked)
+                                }
+                            },
                             onToggleFavorite = { viewModel.toggleFavorite(app) }
                         )
                     }

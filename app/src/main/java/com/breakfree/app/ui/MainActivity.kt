@@ -3,17 +3,21 @@ package com.breakfree.app.ui
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AppOpsManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -29,6 +33,10 @@ import com.breakfree.app.ui.theme.BreakFreeTheme
 class MainActivity : ComponentActivity() {
     private var permissionRefreshTrigger by mutableStateOf(0)
 
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
     fun isAccessibilityServiceEnabled(): Boolean {
         val am = getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
         val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_GENERIC)
@@ -41,7 +49,7 @@ class MainActivity : ComponentActivity() {
 
     fun isUsageStatsPermissionGranted(): Boolean {
         val appOps = getSystemService(APP_OPS_SERVICE) as AppOpsManager
-        val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
         } else {
             @Suppress("DEPRECATION")
@@ -66,6 +74,29 @@ class MainActivity : ComponentActivity() {
         startActivity(intent)
     }
 
+    fun isNotificationPermissionGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         permissionRefreshTrigger++
@@ -73,6 +104,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
         val settings = BreakFreeApplication.from(application).settingsDataStore
         setContent {
             val theme by settings.theme.collectAsState(initial = AppTheme.SYSTEM)
@@ -100,14 +132,42 @@ private fun AppNavHost(activity: MainActivity, trigger: Int) {
                 onEnableAccessibility = { activity.openAccessibilitySettings() },
                 onEnableUsageStats = { activity.openUsageStatsSettings() },
                 onEnableOverlay = { activity.openOverlaySettings() },
+                onEnableNotifications = { activity.requestNotificationPermission() },
                 isAccessibilityEnabled = { activity.isAccessibilityServiceEnabled() },
                 isUsageStatsEnabled = { activity.isUsageStatsPermissionGranted() },
-                isOverlayEnabled = { activity.isOverlayPermissionGranted() }
+                isOverlayEnabled = { activity.isOverlayPermissionGranted() },
+                isNotificationsEnabled = { activity.isNotificationPermissionGranted() },
+                refreshTrigger = currentTrigger
             )
         }
-        composable("apps") { AppPickerScreen(onBack = { navController.popBackStack() }) }
-        composable("domains") { DomainListScreen(onBack = { navController.popBackStack() }) }
+        composable("apps") {
+            AppPickerScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToBreak = {
+                    navController.navigate("break") {
+                        popUpTo("home")
+                    }
+                }
+            )
+        }
+        composable("domains") {
+            DomainListScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToBreak = {
+                    navController.navigate("break") {
+                        popUpTo("home")
+                    }
+                }
+            )
+        }
         composable("settings") { SettingsScreen(onBack = { navController.popBackStack() }) }
-        composable("break") { BreakScreen(onBack = { navController.popBackStack() }) }
+        composable("break") {
+            BreakScreen(
+                onBack = {
+                    // Always go back to home from break management screen
+                    navController.popBackStack("home", inclusive = false)
+                }
+            )
+        }
     }
 }

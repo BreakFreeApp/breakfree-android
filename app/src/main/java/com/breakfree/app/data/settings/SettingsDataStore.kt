@@ -27,6 +27,7 @@ class SettingsDataStore(private val context: Context) {
         val TOTAL_BREAKS_COUNT = intPreferencesKey("total_breaks_count")
         val TOTAL_BREAK_TIME_MS = longPreferencesKey("total_break_time_ms")
         val SHOW_BREAK_NOTIFICATION = booleanPreferencesKey("show_break_notification")
+        val AUTO_STOP_ON_LOCK_TIMEOUT_MINUTES = intPreferencesKey("auto_stop_on_lock_timeout_minutes")
     }
 
     val gracePeriodSeconds: Flow<Int> = context.settingsDataStore.data.map {
@@ -61,6 +62,10 @@ class SettingsDataStore(private val context: Context) {
         it[Keys.SHOW_BREAK_NOTIFICATION] ?: true
     }
 
+    val autoStopOnLockTimeoutMinutes: Flow<Int> = context.settingsDataStore.data.map {
+        it[Keys.AUTO_STOP_ON_LOCK_TIMEOUT_MINUTES] ?: 1 // Default 1 min
+    }
+
     val durationOptions: Flow<List<BreakDurationOption>> = context.settingsDataStore.data.map { prefs ->
         val csv = prefs[Keys.DURATION_OPTIONS_SECONDS]
         if (csv.isNullOrBlank()) {
@@ -86,6 +91,10 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setShowBreakNotification(show: Boolean) {
         context.settingsDataStore.edit { it[Keys.SHOW_BREAK_NOTIFICATION] = show }
+    }
+
+    suspend fun setAutoStopOnLockTimeoutMinutes(minutes: Int) {
+        context.settingsDataStore.edit { it[Keys.AUTO_STOP_ON_LOCK_TIMEOUT_MINUTES] = minutes }
     }
 
     suspend fun recordBreakRequest() {

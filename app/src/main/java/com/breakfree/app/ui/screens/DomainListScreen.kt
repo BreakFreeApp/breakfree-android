@@ -48,7 +48,11 @@ import com.breakfree.app.ui.components.SearchTopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DomainListScreen(onBack: () -> Unit, viewModel: DomainListViewModel = viewModel()) {
+fun DomainListScreen(
+    onBack: () -> Unit,
+    onNavigateToBreak: () -> Unit,
+    viewModel: DomainListViewModel = viewModel()
+) {
     val state by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf("") }
 
@@ -109,7 +113,14 @@ fun DomainListScreen(onBack: () -> Unit, viewModel: DomainListViewModel = viewMo
                     items(state.selectedDomains, key = { "selected_${it.domain}" }) { domain ->
                         DomainItem(
                             domain = domain,
-                            onToggleBlocked = { viewModel.toggleBlock(domain, it) },
+                            onToggleBlocked = { requestedBlocked ->
+                                // Allowing adding (true) but restricting removing (false)
+                                if (!requestedBlocked && !state.isBreakActive) {
+                                    onNavigateToBreak()
+                                } else {
+                                    viewModel.toggleBlock(domain, requestedBlocked)
+                                }
+                            },
                             onToggleFavorite = { viewModel.toggleFavorite(domain) }
                         )
                     }
@@ -122,7 +133,14 @@ fun DomainListScreen(onBack: () -> Unit, viewModel: DomainListViewModel = viewMo
                     items(state.otherDomains, key = { "other_${it.domain}" }) { domain ->
                         DomainItem(
                             domain = domain,
-                            onToggleBlocked = { viewModel.toggleBlock(domain, it) },
+                            onToggleBlocked = { requestedBlocked ->
+                                // Allowing adding (true) but restricting removing (false)
+                                if (!requestedBlocked && !state.isBreakActive) {
+                                    onNavigateToBreak()
+                                } else {
+                                    viewModel.toggleBlock(domain, requestedBlocked)
+                                }
+                            },
                             onToggleFavorite = { viewModel.toggleFavorite(domain) }
                         )
                     }
