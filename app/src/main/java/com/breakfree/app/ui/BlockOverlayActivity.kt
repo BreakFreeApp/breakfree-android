@@ -29,7 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.breakfree.app.R
+import com.breakfree.android.R
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.ui.theme.BreakFreeTheme
 import kotlinx.coroutines.delay

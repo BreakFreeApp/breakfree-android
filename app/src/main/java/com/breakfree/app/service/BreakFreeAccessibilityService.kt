@@ -37,12 +37,13 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.breakfree.app.BreakFreeApplication
-import com.breakfree.app.R
+import com.breakfree.android.R
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.ui.BlockOverlayActivity
 import com.breakfree.app.ui.theme.BreakFreeTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -65,6 +66,11 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     
     private var overlayView: View? = null
     private var lifecycleOwner: ServiceLifecycleOwner? = null
+
+    // URL monitoring state
+    private var lastSeenUrl: String? = null
+    private var browserUrlCheckJob: Job? = null
+    private var cachedUrlBarNode: AccessibilityNodeInfo? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -100,82 +106,126 @@ class BreakFreeAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        val packageName = event.packageName?.toString() ?: return
+        if (packageName == ownPackageName) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                val pkg = event.packageName?.toString() ?: return
-                if (pkg == ownPackageName) return
-
-                if (pkg in blockedPackages) {
-                    val app = BreakFreeApplication.from(this)
-                    if (!app.breakStateManager.isBreakActiveNow()) {
-                        showOverlay(pkg)
-                    } else {
-                        hideOverlay()
-                    }
-                } else if (!isBrowser(pkg) && pkg != "android" && pkg != "com.android.systemui" && pkg != "com.google.android.inputmethod.latin") {
-                    // If we switched to an unblocked non-browser app, hide overlay
-                    hideOverlay()
-                }
+                handleWindowStateChanged(packageName)
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                val pkg = event.packageName?.toString() ?: return
-                if (isBrowser(pkg)) {
-                    checkBrowserUrl(event.source, pkg)
+                if (isBrowser(packageName)) {
+                    scheduleBrowserUrlCheck(packageName)
                 }
             }
         }
     }
 
-    private fun isBrowser(packageName: String): Boolean {
-        return packageName in BROWSER_CONFIGS.keys
+    private fun handleWindowStateChanged(packageName: String) {
+        // 1. Regular App Blocking (Non-browser apps)
+        if (packageName in blockedPackages) {
+            val app = BreakFreeApplication.from(this)
+            if (!app.breakStateManager.isBreakActiveNow()) {
+                showOverlay(packageName)
+            } else {
+                hideOverlay()
+            }
+            return
+        }
+
+        // 2. Browser Handling
+        if (isBrowser(packageName)) {
+            // Re-resolve the URL bar AccessibilityNodeInfo reference for the active browser
+            cachedUrlBarNode?.recycle()
+            cachedUrlBarNode = findUrlBarNode(packageName)
+            
+            // Immediate check on window change
+            checkBrowserUrl(packageName)
+        } else if (packageName != "android" && 
+                   packageName != "com.android.systemui" && 
+                   !packageName.contains("inputmethod")) {
+            // Switched to an unblocked non-browser app, hide overlay
+            hideOverlay()
+        }
     }
 
-    private fun checkBrowserUrl(source: AccessibilityNodeInfo?, packageName: String) {
-        val url = getUrlFromBrowser(source, packageName) ?: return
-        val domain = getDomainFromUrl(url) ?: return
+    private fun scheduleBrowserUrlCheck(packageName: String) {
+        browserUrlCheckJob?.cancel()
+        browserUrlCheckJob = scope.launch {
+            // Debounce since TYPE_WINDOW_CONTENT_CHANGED fires in bursts
+            delay(200) 
+            checkBrowserUrl(packageName)
+        }
+    }
 
+    private fun checkBrowserUrl(packageName: String) {
+        // Re-read text from the cached URL bar node (don't trust event payload directly)
+        val url = readUrlFromCachedNode() ?: findUrlBarNode(packageName)?.also {
+            cachedUrlBarNode?.recycle()
+            cachedUrlBarNode = it
+        }?.text?.toString()
+
+        // Only fire block-check logic if the value actually changed (detects tab refresh)
+        if (url == null || url == lastSeenUrl) return
+        lastSeenUrl = url
+
+        val domain = getDomainFromUrl(url) ?: return
         if (domain in blockedDomains) {
             val app = BreakFreeApplication.from(this)
             if (!app.breakStateManager.isBreakActiveNow()) {
                 showOverlay(packageName, domain)
             }
         } else {
-            // Simple approach: if browser URL is safe, hide overlay
+            // URL is not blocked, safe to hide overlay
             hideOverlay()
         }
     }
 
-    private fun getUrlFromBrowser(source: AccessibilityNodeInfo?, packageName: String): String? {
-        val rootNode = source ?: rootInActiveWindow ?: return null
+    private fun readUrlFromCachedNode(): String? {
+        val node = cachedUrlBarNode ?: return null
+        return try {
+            // refresh() ensures we have the latest state from the server side
+            if (node.refresh()) {
+                node.text?.toString()
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun findUrlBarNode(packageName: String): AccessibilityNodeInfo? {
+        val rootNode = rootInActiveWindow ?: return null
         val config = BROWSER_CONFIGS[packageName]
         
         // 1. Try specific resource IDs from config
         config?.urlBarIds?.forEach { id ->
-            rootNode.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.text?.toString()?.let {
-                if (it.isNotBlank()) return it
-            }
+            rootNode.findAccessibilityNodeInfosByViewId(id)?.firstOrNull()?.let { return it }
         }
 
         // 2. Generic fallback search for common address bar patterns
-        return findUrlBySearch(rootNode)
+        return findUrlNodeRecursive(rootNode)
     }
 
-    private fun findUrlBySearch(node: AccessibilityNodeInfo): String? {
-        // Look for nodes that likely contain the URL
+    private fun findUrlNodeRecursive(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.viewIdResourceName?.contains("url_bar", ignoreCase = true) == true ||
             node.viewIdResourceName?.contains("address_bar", ignoreCase = true) == true ||
             node.viewIdResourceName?.contains("location_bar", ignoreCase = true) == true) {
-            node.text?.toString()?.let { if (it.isNotBlank() && it.contains(".")) return it }
+            return node
         }
 
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let { child ->
-                val result = findUrlBySearch(child)
+                val result = findUrlNodeRecursive(child)
                 if (result != null) return result
             }
         }
         return null
+    }
+
+    private fun isBrowser(packageName: String): Boolean {
+        return packageName in BROWSER_CONFIGS.keys
     }
 
     private fun getDomainFromUrl(url: String): String? {
@@ -184,7 +234,7 @@ class BreakFreeAccessibilityService : AccessibilityService() {
             val host = uri.host ?: return null
             host.removePrefix("www.").lowercase()
         } catch (e: Exception) {
-            // Fallback for partial URLs or messy text in address bar
+            // Fallback for partial URLs
             val domain = url.split("/").firstOrNull()?.removePrefix("www.")?.lowercase()
             if (domain?.contains(".") == true) domain else null
         }

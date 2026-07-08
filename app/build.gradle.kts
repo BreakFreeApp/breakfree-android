@@ -1,24 +1,47 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    // Note: In AGP 9.0+, built-in Kotlin support is enabled. 
+    // The "org.jetbrains.kotlin.android" plugin is deprecated.
     id("com.google.devtools.ksp")
     id("org.jetbrains.kotlin.plugin.compose")
+    //Playstore automation
+    id("com.github.triplet.play") version "4.0.0"
 }
 
 android {
-    namespace = "com.breakfree.app"
+    namespace = "com.breakfree.android"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.breakfree.app"
+        applicationId = "com.breakfree.android"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            val properties = Properties()
+            val localPropertiesFile = rootProject.file("local.properties")
+            if (localPropertiesFile.exists()) {
+                properties.load(FileInputStream(localPropertiesFile))
+            }
+
+            // Provide a fallback string to prevent config failures if the file is missing
+            storeFile = file(properties.getProperty("keystore.path") ?: "missing-keystore.jks")
+            storePassword = properties.getProperty("keystore.password")
+            keyAlias = properties.getProperty("key.alias")
+            keyPassword = properties.getProperty("key.password")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -28,9 +51,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     buildFeatures {
         compose = true
@@ -38,6 +58,14 @@ android {
 
     packaging {
         resources.excludes.add("/META-INF/{AL2.0,LGPL2.1}")
+    }
+}
+
+// Gradle 9 / Kotlin 2.x Deprecation Fix
+// Replaces the deprecated 'kotlinOptions' block previously inside the 'android' block
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -72,4 +100,32 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+play {
+    // Point to the JSON key file you placed in the root directory
+
+    val properties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        properties.load(FileInputStream(localPropertiesFile))
+    }
+
+    val keyPath = properties.getProperty("play.key.path")
+
+    // Check if the property exists and isn't just an empty string
+    if (!keyPath.isNullOrBlank()) {
+        val playKey = file(keyPath)
+
+        // Final safety check: does the file actually exist on the disk?
+        if (playKey.exists()) {
+            serviceAccountCredentials.set(playKey)
+        } else {
+            println("⚠️ WARNING: play.key.path is defined, but the file was not found at: ${playKey.absolutePath}")
+        }
+    } else {
+        println("ℹ️ INFO: Play Publisher credentials skipped (play.key.path is missing or empty).")
+    }
+
+    track.set("interanl")
 }

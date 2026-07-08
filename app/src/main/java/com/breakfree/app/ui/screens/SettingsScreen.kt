@@ -90,6 +90,28 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
                 }
             }
 
+            // Auto-stop on lock setting
+            val autoStopOptions = listOf(0, 1, 2, 5, 10)
+            val autoStopIndex = autoStopOptions.indexOf(state.autoStopOnLockTimeoutMinutes).coerceAtLeast(0)
+            
+            Text(
+                "Auto-stop break when locked: ${if (state.autoStopOnLockTimeoutMinutes == 0) "Disabled" else "${state.autoStopOnLockTimeoutMinutes} min"}",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 24.dp)
+            )
+            Text(
+                "Automatically stop an active break if the screen remains off for the specified time.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Slider(
+                value = autoStopIndex.toFloat(),
+                onValueChange = { index ->
+                    viewModel.setAutoStopOnLockTimeout(autoStopOptions[index.toInt()])
+                },
+                valueRange = 0f..4f,
+                steps = 3,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
         }
     }
 }

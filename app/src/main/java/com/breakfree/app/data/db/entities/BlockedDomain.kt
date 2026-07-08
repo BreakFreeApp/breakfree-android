@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * A domain blocked at the DNS level via BreakFreeVpnService.
+ * A domain blocked via the AccessibilityService URL monitoring.
  * Stored in lowercase, no scheme, no path (e.g. "instagram.com").
  */
 @Entity(tableName = "blocked_domains")

@@ -3,12 +3,15 @@ package com.breakfree.app.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import com.breakfree.app.R
+import com.breakfree.android.R
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.data.settings.PersistedBreakState
+import com.breakfree.app.ui.MainActivity
 
 class BreakNotificationManager(private val context: Context) {
 
@@ -23,7 +26,7 @@ class BreakNotificationManager(private val context: Context) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Active Break",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Shows countdown when a break is active"
             }
@@ -46,13 +49,24 @@ class BreakNotificationManager(private val context: Context) {
         val seconds = (remainingMs / 1000).toInt()
         val contentText = "Break ends in ${formatCountdown(seconds)}"
 
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("BreakFree is active")
             .setContentText(contentText)
+            .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)

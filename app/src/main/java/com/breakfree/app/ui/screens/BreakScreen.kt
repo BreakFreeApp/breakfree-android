@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,7 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.breakfree.app.R
+import com.breakfree.android.R
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.ui.HomeViewModel
 import com.breakfree.app.ui.components.SearchTopAppBar
@@ -54,7 +55,18 @@ fun BreakScreen(onBack: () -> Unit, viewModel: HomeViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
     
     var challengeUi by remember { mutableStateOf(ChallengeUiState()) }
-    var selectedBreakDuration by remember { mutableStateOf<Int?>(null) }
+    
+    val durationOptions = remember {
+        listOf(
+            "1m" to 60,
+            "5m" to 300,
+            "10m" to 600,
+            "30m" to 1800,
+            "1h" to 3600,
+            "2h" to 7200
+        )
+    }
+    var sliderValue by remember { mutableStateOf(1f) } // Default 5m
 
     LaunchedEffect(state.phase) {
         if (state.phase == BreakPhase.CHALLENGE) {
@@ -65,8 +77,6 @@ fun BreakScreen(onBack: () -> Unit, viewModel: HomeViewModel = viewModel()) {
                 yesHighlighted = Random.nextBoolean(),
                 noHighlighted = Random.nextBoolean()
             )
-        } else if (state.phase == BreakPhase.NONE) {
-            selectedBreakDuration = null
         }
     }
 
@@ -83,143 +93,207 @@ fun BreakScreen(onBack: () -> Unit, viewModel: HomeViewModel = viewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp)
+                .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    when (state.phase) {
-                        BreakPhase.NONE -> {
-                            Text("Request a break", style = MaterialTheme.typography.titleMedium)
-                            
-                            if (selectedBreakDuration == null) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    val options = listOf(
-                                        "1m" to 60,
-                                        "5m" to 300,
-                                        "10m" to 600,
-                                        "30m" to 1800,
-                                        "1h" to 3600
-                                    )
-                                    options.forEach { (label, secs) ->
-                                        OutlinedButton(
-                                            onClick = { selectedBreakDuration = secs },
-                                            modifier = Modifier.weight(1f),
-                                            contentPadding = PaddingValues(horizontal = 4.dp)
-                                        ) {
-                                            Text(label, style = MaterialTheme.typography.labelSmall)
-                                        }
-                                    }
-                                }
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Button(
-                                        onClick = { viewModel.requestBreak(selectedBreakDuration!!) },
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("Request Break")
-                                    }
-                                    OutlinedButton(
-                                        onClick = { selectedBreakDuration = null },
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("Cancel")
-                                    }
-                                }
-                            }
+            if (state.phase == BreakPhase.ACTIVE) {
+                // Active Break UI (Centered)
+                Spacer(modifier = Modifier.weight(1f))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(80.dp)
+                                .padding(bottom = 16.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text("Break active", style = MaterialTheme.typography.headlineSmall)
+                        Text(formatCountdown(state.activeSecondsRemaining), style = MaterialTheme.typography.displayMedium)
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Button(
+                            onClick = { viewModel.cancelBreak() },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Stop Break")
                         }
-                        BreakPhase.GRACE -> {
-                            Text("Friction active", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+                Spacer(modifier = Modifier.weight(1f))
+            } else {
+                // Stepper UI for Requesting a Break
+                
+                // Step 1: Duration Selection
+                val isSelectionActive = state.phase == BreakPhase.NONE
+                val isSelectionCompleted = state.phase != BreakPhase.NONE
+                
+                StepCard(
+                    title = "1. Choose Duration",
+                    isCompleted = isSelectionCompleted,
+                    isActive = isSelectionActive
+                ) {
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        Text(
+                            "Duration: ${durationOptions[sliderValue.toInt()].first}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Slider(
+                            value = sliderValue,
+                            onValueChange = { sliderValue = it },
+                            valueRange = 0f..5f,
+                            steps = 4,
+                            enabled = isSelectionActive
+                        )
+                        if (isSelectionActive) {
                             Button(
-                                onClick = {},
-                                enabled = false,
-                                modifier = Modifier.fillMaxWidth()
+                                onClick = { viewModel.requestBreak(durationOptions[sliderValue.toInt()].second) },
+                                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                             ) {
-                                Text("Wait... ${formatCountdown(state.graceSecondsRemaining)}")
-                            }
-                            OutlinedButton(
-                                onClick = { viewModel.cancelBreak() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Cancel")
-                            }
-                        }
-                        BreakPhase.CHALLENGE -> {
-                            Text("Confirm break?", style = MaterialTheme.typography.titleMedium)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                val yesLabel = if (challengeUi.yesCapital) "YES" else "yes"
-                                val noLabel = if (challengeUi.noCapital) "NO" else "no"
-                                
-                                val yesButton = @Composable {
-                                    Button(
-                                        onClick = { viewModel.confirmBreak() },
-                                        modifier = Modifier.weight(1f),
-                                        colors = if (challengeUi.yesHighlighted) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors()
-                                    ) {
-                                        Text(yesLabel)
-                                    }
-                                }
-                                
-                                val noButton = @Composable {
-                                    Button(
-                                        onClick = { viewModel.cancelBreak() },
-                                        modifier = Modifier.weight(1f),
-                                        colors = if (challengeUi.noHighlighted) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors()
-                                    ) {
-                                        Text(noLabel)
-                                    }
-                                }
-                                
-                                if (challengeUi.swapped) {
-                                    noButton()
-                                    yesButton()
-                                } else {
-                                    yesButton()
-                                    noButton()
-                                }
-                            }
-                        }
-                        BreakPhase.ACTIVE -> {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(64.dp)
-                                            .padding(bottom = 16.dp),
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    Text("Break active", style = MaterialTheme.typography.titleLarge)
-                                    Text(formatCountdown(state.activeSecondsRemaining), style = MaterialTheme.typography.headlineMedium)
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Button(
-                                        onClick = { viewModel.cancelBreak() },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                    ) {
-                                        Text("Stop Break")
-                                    }
-                                }
+                                Text("Request Break")
                             }
                         }
                     }
                 }
+
+                // Step 2: Grace Period
+                val isGraceActive = state.phase == BreakPhase.GRACE
+                val isGraceCompleted = state.phase == BreakPhase.CHALLENGE
+                val isGraceVisible = isGraceActive || isGraceCompleted || isSelectionActive
+                
+                if (isGraceVisible) {
+                    StepCard(
+                        title = "2. Friction Period",
+                        isCompleted = isGraceCompleted,
+                        isActive = isGraceActive
+                    ) {
+                        if (isGraceActive || isGraceCompleted) {
+                            Column(modifier = Modifier.padding(top = 8.dp)) {
+                                if (isGraceActive) {
+                                    Text("Wait for the friction period to end...", style = MaterialTheme.typography.bodyMedium)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = {},
+                                        enabled = false,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Wait... ${formatCountdown(state.graceSecondsRemaining)}")
+                                    }
+                                    OutlinedButton(
+                                        onClick = { viewModel.cancelBreak() },
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                                    ) {
+                                        Text("Cancel")
+                                    }
+                                } else {
+                                    Text("Friction period completed", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        } else {
+                            Text("Waiting for request...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+
+                // Step 3: Challenge
+                val isChallengeActive = state.phase == BreakPhase.CHALLENGE
+                val isChallengeVisible = isChallengeActive || isGraceActive
+                
+                if (isChallengeVisible) {
+                    StepCard(
+                        title = "3. Confirm Break",
+                        isCompleted = false,
+                        isActive = isChallengeActive
+                    ) {
+                        if (isChallengeActive) {
+                            Column(modifier = Modifier.padding(top = 8.dp)) {
+                                Text("Are you sure you want to start the break?", style = MaterialTheme.typography.bodyMedium)
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    val yesLabel = if (challengeUi.yesCapital) "YES" else "yes"
+                                    val noLabel = if (challengeUi.noCapital) "NO" else "no"
+                                    
+                                    val yesButton = @Composable {
+                                        Button(
+                                            onClick = { viewModel.confirmBreak() },
+                                            modifier = Modifier.weight(1f),
+                                            colors = if (challengeUi.yesHighlighted) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors()
+                                        ) {
+                                            Text(yesLabel)
+                                        }
+                                    }
+                                    
+                                    val noButton = @Composable {
+                                        Button(
+                                            onClick = { viewModel.cancelBreak() },
+                                            modifier = Modifier.weight(1f),
+                                            colors = if (challengeUi.noHighlighted) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors()
+                                        ) {
+                                            Text(noLabel)
+                                        }
+                                    }
+                                    
+                                    if (challengeUi.swapped) {
+                                        noButton()
+                                        yesButton()
+                                    } else {
+                                        yesButton()
+                                        noButton()
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("Confirmation will appear here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun StepCard(
+    title: String,
+    isCompleted: Boolean,
+    isActive: Boolean,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isActive) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isActive) 4.dp else 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                if (isCompleted) {
+                    Icon(
+                        painter = painterResource(id = android.R.drawable.checkbox_on_background),
+                        contentDescription = "Completed",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            content()
         }
     }
 }

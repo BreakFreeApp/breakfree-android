@@ -13,6 +13,7 @@ class BreakExpiryReceiver : BroadcastReceiver() {
         when (intent.action) {
             BreakStateManager.ACTION_GRACE_ENDS_INTENT -> manager.onGraceExpiredAlarm()
             BreakStateManager.ACTION_BREAK_ENDS_INTENT -> manager.onBreakExpiredAlarm()
+            BreakStateManager.ACTION_AUTO_STOP_INTENT -> manager.cancelBreak()
         }
     }
 }

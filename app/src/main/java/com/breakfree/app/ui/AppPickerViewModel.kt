@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.breakfree.app.BreakFreeApplication
 import com.breakfree.app.data.model.AppInfo
+import com.breakfree.app.data.settings.BreakPhase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -28,13 +29,15 @@ data class AppPickerUiState(
     val searchQuery: String = "",
     val sortOrder: SortOrder = SortOrder.USAGE,
     val isAscending: Boolean = false,
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    val isBreakActive: Boolean = false
 )
 
 class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val breakFreeApp = BreakFreeApplication.from(app)
     private val appRepository = breakFreeApp.appRepository
+    private val breakStateManager = breakFreeApp.breakStateManager
     
     private val searchQuery = MutableStateFlow("")
     private val sortOrder = MutableStateFlow(SortOrder.USAGE)
@@ -45,22 +48,13 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
     private var initialBlockedPackages: Set<String> = emptySet()
 
     val uiState: StateFlow<AppPickerUiState> = combine(
-        listOf(
-            appRepository.apps,
-            localBlockedPackages,
-            searchQuery,
-            sortOrder,
-            isAscending,
-            isRefreshing
-        )
-    ) { values ->
-        val apps = values[0] as List<AppInfo>
-        val localBlocked = values[1] as Set<String>
-        val query = values[2] as String
-        val order = values[3] as SortOrder
-        val ascending = values[4] as Boolean
-        val refreshing = values[5] as Boolean
-
+        appRepository.apps,
+        localBlockedPackages,
+        searchQuery,
+        sortOrder,
+        combine(isAscending, isRefreshing, breakStateManager.state) { a, r, s -> Triple(a, r, s) }
+    ) { apps, localBlocked, query, order, misc ->
+        val (ascending, refreshing, breakState) = misc
         try {
             val filtered = apps.filter { 
                 it.appName.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
@@ -102,11 +96,19 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
                 searchQuery = query,
                 sortOrder = order,
                 isAscending = ascending,
-                isRefreshing = refreshing
+                isRefreshing = refreshing,
+                isBreakActive = breakState.phase == BreakPhase.ACTIVE
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error in combine block", e)
-            AppPickerUiState(blockedPackages = localBlocked, searchQuery = query, sortOrder = order, isAscending = ascending, isRefreshing = refreshing)
+            AppPickerUiState(
+                blockedPackages = localBlocked,
+                searchQuery = query,
+                sortOrder = order,
+                isAscending = ascending,
+                isRefreshing = refreshing,
+                isBreakActive = breakState.phase == BreakPhase.ACTIVE
+            )
         }
     }.stateIn(
         viewModelScope,
@@ -206,11 +208,5 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
                 Log.e(TAG, "Failed to toggle favorite", e)
             }
         }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        // No longer strictly necessary as we save immediately now,
-        // but good as a final sync if needed.
     }
 }
