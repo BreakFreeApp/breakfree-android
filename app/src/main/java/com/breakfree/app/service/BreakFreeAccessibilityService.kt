@@ -122,10 +122,12 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     }
 
     private fun handleWindowStateChanged(packageName: String) {
+        val app = BreakFreeApplication.from(this)
+        val isBreakActive = app.breakStateManager.isBreakActiveNow()
+
         // 1. Regular App Blocking (Non-browser apps)
         if (packageName in blockedPackages) {
-            val app = BreakFreeApplication.from(this)
-            if (!app.breakStateManager.isBreakActiveNow()) {
+            if (!isBreakActive) {
                 showOverlay(packageName)
             } else {
                 hideOverlay()
@@ -144,7 +146,7 @@ class BreakFreeAccessibilityService : AccessibilityService() {
         } else if (packageName != "android" && 
                    packageName != "com.android.systemui" && 
                    !packageName.contains("inputmethod")) {
-            // Switched to an unblocked non-browser app, hide overlay
+            // Switched to an unblocked non-browser app
             hideOverlay()
         }
     }
@@ -159,6 +161,9 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     }
 
     private fun checkBrowserUrl(packageName: String) {
+        val app = BreakFreeApplication.from(this)
+        val isBreakActive = app.breakStateManager.isBreakActiveNow()
+
         // Re-read text from the cached URL bar node (don't trust event payload directly)
         val url = readUrlFromCachedNode() ?: findUrlBarNode(packageName)?.also {
             cachedUrlBarNode?.recycle()
@@ -166,13 +171,16 @@ class BreakFreeAccessibilityService : AccessibilityService() {
         }?.text?.toString()
 
         // Only fire block-check logic if the value actually changed (detects tab refresh)
-        if (url == null || url == lastSeenUrl) return
+        if (url == null || url == lastSeenUrl) {
+            // Even if URL hasn't changed, if we are currently showing an overlay and break is now active, hide it
+            if (isBreakActive) hideOverlay()
+            return
+        }
         lastSeenUrl = url
 
         val domain = getDomainFromUrl(url) ?: return
         if (domain in blockedDomains) {
-            val app = BreakFreeApplication.from(this)
-            if (!app.breakStateManager.isBreakActiveNow()) {
+            if (!isBreakActive) {
                 showOverlay(packageName, domain)
             }
         } else {

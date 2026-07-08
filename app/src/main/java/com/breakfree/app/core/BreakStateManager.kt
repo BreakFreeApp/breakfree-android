@@ -169,14 +169,9 @@ class BreakStateManager(
         val now = System.currentTimeMillis()
         val current = _state.value
         if (current.phase == BreakPhase.GRACE) {
-            // Auto-confirm break when grace period ends
-            val durationMs = current.activeEndsAtEpochMs // stored duration
-            val activeEnds = now + durationMs
-            val newState = PersistedBreakState(BreakPhase.ACTIVE, now, activeEnds)
-            
+            val newState = current.copy(phase = BreakPhase.CHALLENGE)
             _state.value = newState
             scope.launch { store.write(newState) }
-            scheduleAlarm(activeEnds, ACTION_BREAK_ENDS, REQUEST_CODE_ACTIVE)
         }
     }
 

@@ -23,7 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.breakfree.app.BreakFreeApplication
 import com.breakfree.app.data.settings.AppTheme
-import com.breakfree.app.ui.screens.AppPickerScreen
+import com.breakfree.app.ui.screens.AppListScreen
 import com.breakfree.app.ui.screens.BreakScreen
 import com.breakfree.app.ui.screens.DomainListScreen
 import com.breakfree.app.ui.screens.HomeScreen
@@ -125,7 +125,7 @@ private fun AppNavHost(activity: MainActivity, trigger: Int) {
             // Using trigger here ensures this block recomposes when trigger changes
             val currentTrigger = trigger
             HomeScreen(
-                onOpenAppPicker = { navController.navigate("apps") },
+                onOpenAppList = { navController.navigate("apps") },
                 onOpenDomainList = { navController.navigate("domains") },
                 onOpenSettings = { navController.navigate("settings") },
                 onOpenBreakManagement = { navController.navigate("break") },
@@ -141,23 +141,13 @@ private fun AppNavHost(activity: MainActivity, trigger: Int) {
             )
         }
         composable("apps") {
-            AppPickerScreen(
-                onBack = { navController.popBackStack() },
-                onNavigateToBreak = {
-                    navController.navigate("break") {
-                        popUpTo("home")
-                    }
-                }
+            AppListScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable("domains") {
             DomainListScreen(
-                onBack = { navController.popBackStack() },
-                onNavigateToBreak = {
-                    navController.navigate("break") {
-                        popUpTo("home")
-                    }
-                }
+                onBack = { navController.popBackStack() }
             )
         }
         composable("settings") { SettingsScreen(onBack = { navController.popBackStack() }) }

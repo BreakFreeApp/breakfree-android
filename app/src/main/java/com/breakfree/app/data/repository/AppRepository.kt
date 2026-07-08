@@ -57,7 +57,7 @@ class AppRepository(
             
             if (!force && isSameDay(lastRefresh, now) && _apps.value.any { it.usageTimeMs > 0 }) {
                 val current = _apps.value
-                if (current.isNotEmpty() && blockedPackageNames.isNotEmpty()) {
+                if (current.isNotEmpty()) {
                     val updated = current.map { it.copy(isBlocked = blockedPackageNames.contains(it.packageName)) }
                     _apps.value = updated
                     appMetadataDao.insertAll(updated.map { it.toEntity() })
@@ -171,16 +171,23 @@ class AppRepository(
         }
     }
 
+    suspend fun setFavorite(packageName: String, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        try {
+            val current = _apps.value
+            appMetadataDao.updateFavorite(packageName, isFavorite)
+            _apps.value = current.map {
+                if (it.packageName == packageName) it.copy(isFavorite = isFavorite) else it
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set favorite", e)
+        }
+    }
+
     suspend fun toggleFavorite(packageName: String) = withContext(Dispatchers.IO) {
         try {
             val current = _apps.value
             val app = current.find { it.packageName == packageName } ?: return@withContext
-            val newFav = !app.isFavorite
-            
-            appMetadataDao.updateFavorite(packageName, newFav)
-            _apps.value = current.map {
-                if (it.packageName == packageName) it.copy(isFavorite = newFav) else it
-            }
+            setFavorite(packageName, !app.isFavorite)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle favorite", e)
         }

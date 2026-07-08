@@ -14,18 +14,21 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
-private const val TAG = "AppPickerViewModel"
+private const val TAG = "AppListViewModel"
 
 enum class SortOrder {
     ALPHABETICAL,
     USAGE
 }
 
-data class AppPickerUiState(
+data class AppListUiState(
     val selectedApps: List<AppInfo> = emptyList(),
     val otherApps: List<AppInfo> = emptyList(),
     val blockedPackages: Set<String> = emptySet(),
+    val lockedPackages: Set<String> = emptySet(),
     val searchQuery: String = "",
     val sortOrder: SortOrder = SortOrder.USAGE,
     val isAscending: Boolean = false,
@@ -33,7 +36,7 @@ data class AppPickerUiState(
     val isBreakActive: Boolean = false
 )
 
-class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
+class AppListViewModel(app: Application) : AndroidViewModel(app) {
 
     private val breakFreeApp = BreakFreeApplication.from(app)
     private val appRepository = breakFreeApp.appRepository
@@ -44,17 +47,23 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
     private val isAscending = MutableStateFlow(false)
     private val isRefreshing = MutableStateFlow(false)
     private val localBlockedPackages = MutableStateFlow<Set<String>>(emptySet())
-    
-    private var initialBlockedPackages: Set<String> = emptySet()
+    private val lockedPackages = MutableStateFlow<Set<String>>(emptySet())
 
-    val uiState: StateFlow<AppPickerUiState> = combine(
-        appRepository.apps,
-        localBlockedPackages,
-        searchQuery,
-        sortOrder,
-        combine(isAscending, isRefreshing, breakStateManager.state) { a, r, s -> Triple(a, r, s) }
-    ) { apps, localBlocked, query, order, misc ->
-        val (ascending, refreshing, breakState) = misc
+    private val _toastMessage = MutableSharedFlow<String>()
+    val toastMessage = _toastMessage.asSharedFlow()
+
+    private val appsFlow = appRepository.apps
+    private val breakStateFlow = breakStateManager.state
+
+    val uiState: StateFlow<AppListUiState> = combine(
+        combine(appsFlow, localBlockedPackages, lockedPackages) { a, b, l -> Triple(a, b, l) },
+        combine(searchQuery, sortOrder, isAscending) { q, o, asc -> Triple(q, o, asc) },
+        combine(isRefreshing, breakStateFlow) { r, s -> r to s }
+    ) { group1, group2, group3 ->
+        val (apps, localBlocked, locked) = group1
+        val (query, order, ascending) = group2
+        val (refreshing, breakState) = group3
+        
         try {
             val filtered = apps.filter { 
                 it.appName.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
@@ -63,7 +72,7 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
             val favoritePackages = apps.filter { it.isFavorite }.map { it.packageName }.toSet()
             val selectedPackages = localBlocked + favoritePackages
             
-            val selectedToShow = apps.filter { it.packageName in selectedPackages }
+            val selectedToShow = filtered.filter { it.packageName in selectedPackages }
             val othersToShow = filtered.filter { it.packageName !in selectedPackages }
             
             fun sort(list: List<AppInfo>, prioritizeBlocked: Boolean) = when (order) {
@@ -89,10 +98,11 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             
-            AppPickerUiState(
+            AppListUiState(
                 selectedApps = sort(selectedToShow, prioritizeBlocked = true),
                 otherApps = sort(othersToShow, prioritizeBlocked = false),
                 blockedPackages = localBlocked,
+                lockedPackages = locked,
                 searchQuery = query,
                 sortOrder = order,
                 isAscending = ascending,
@@ -101,8 +111,9 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error in combine block", e)
-            AppPickerUiState(
+            AppListUiState(
                 blockedPackages = localBlocked,
+                lockedPackages = locked,
                 searchQuery = query,
                 sortOrder = order,
                 isAscending = ascending,
@@ -113,12 +124,16 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
     }.stateIn(
         viewModelScope,
         kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
-        AppPickerUiState()
+        AppListUiState()
     )
 
     init {
         viewModelScope.launch {
             try {
+                // Fetch the actual source of truth for blocked apps from the BlockingRepository
+                val blockedFromDb = breakFreeApp.repository.blockedPackageNames()
+                localBlockedPackages.value = blockedFromDb
+
                 // Wait for cache to be ready if it's currently empty, with a timeout
                 withTimeoutOrNull(3000) {
                     if (appRepository.apps.value.isEmpty()) {
@@ -126,11 +141,10 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 
-                val cachedApps = appRepository.apps.value
-                val cachedBlocked = cachedApps.filter { it.isBlocked }.map { it.packageName }.toSet()
-                
-                initialBlockedPackages = cachedBlocked
-                localBlockedPackages.value = initialBlockedPackages
+                // Determine which apps are initially "selected" (blocked or favorite)
+                val apps = appRepository.apps.value
+                val favorites = apps.filter { it.isFavorite }.map { it.packageName }.toSet()
+                lockedPackages.value = blockedFromDb + favorites
                 
                 // Trigger lazy refresh of usage stats/popularity in background
                 refreshApps()
@@ -180,20 +194,31 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggle(app: AppInfo, blocked: Boolean) {
+        val isLocked = app.packageName in lockedPackages.value
+        val isBreakActive = uiState.value.isBreakActive
+        
+        if (!blocked && isLocked && !isBreakActive) {
+            viewModelScope.launch { _toastMessage.emit("removal is allowed only during breaks") }
+            return
+        }
+
         val current = localBlockedPackages.value.toMutableSet()
         if (blocked) current.add(app.packageName) else current.remove(app.packageName)
-        localBlockedPackages.value = current
+        val updatedSet = current.toSet()
+        localBlockedPackages.value = updatedSet
         
         // Save immediately to repository so other screens (like Home) update
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 if (blocked) {
                     breakFreeApp.repository.addApp(app.packageName, app.appName)
+                    // Requirement: when an entry is checked, also the fev button is set to on.
+                    appRepository.setFavorite(app.packageName, true)
                 } else {
                     breakFreeApp.repository.removeApp(app.packageName)
                 }
                 // Also update the metadata cache
-                breakFreeApp.appRepository.updateBlockedStatus(localBlockedPackages.value)
+                breakFreeApp.appRepository.updateBlockedStatus(updatedSet)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to toggle app in database", e)
             }
@@ -201,9 +226,18 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
     }
     
     fun toggleFavorite(app: AppInfo) {
+        val isLocked = app.packageName in lockedPackages.value
+        val isBreakActive = uiState.value.isBreakActive
+        val requestedFavorite = !app.isFavorite
+        
+        if (!requestedFavorite && isLocked && !isBreakActive) {
+            viewModelScope.launch { _toastMessage.emit("removal is allowed only during breaks") }
+            return
+        }
+
         viewModelScope.launch {
             try {
-                appRepository.toggleFavorite(app.packageName)
+                appRepository.setFavorite(app.packageName, requestedFavorite)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to toggle favorite", e)
             }

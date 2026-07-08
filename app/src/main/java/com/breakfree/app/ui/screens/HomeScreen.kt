@@ -5,7 +5,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -39,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakfree.app.data.settings.BreakPhase
@@ -50,7 +49,7 @@ import com.breakfree.app.ui.components.SearchTopAppBar
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
-    onOpenAppPicker: () -> Unit,
+    onOpenAppList: () -> Unit,
     onOpenDomainList: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenBreakManagement: () -> Unit,
@@ -73,6 +72,13 @@ fun HomeScreen(
     val overlayEnabled = remember(refreshTrigger) { isOverlayEnabled() }
     val notificationsEnabled = remember(refreshTrigger) { isNotificationsEnabled() }
 
+    // Trigger update when usage permission is granted
+    LaunchedEffect(usageStatsEnabled) {
+        if (usageStatsEnabled) {
+            viewModel.onUsagePermissionGranted()
+        }
+    }
+
     Scaffold(
         topBar = {
             SearchTopAppBar(
@@ -94,7 +100,7 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            StatsAndSuggestionsCard(state, onOpenAppPicker, onOpenDomainList)
+            StatsAndSuggestionsCard(state, onOpenAppList, onOpenDomainList)
 
             if (!accessibilityEnabled) {
                 SetupCard(
@@ -154,10 +160,10 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val label = when(state.phase) {
-                        BreakPhase.NONE -> "Request a Break"
+                        BreakPhase.NONE -> "Request a break"
                         BreakPhase.GRACE -> "Break Pending..."
                         BreakPhase.CHALLENGE -> "Confirm Break"
-                        BreakPhase.ACTIVE -> "End the Break (${formatCountdown(state.activeSecondsRemaining)})"
+                        BreakPhase.ACTIVE -> "End the break (${formatCountdown(state.activeSecondsRemaining)})"
                     }
                     Text(label, style = MaterialTheme.typography.titleMedium)
                 }
@@ -167,22 +173,17 @@ fun HomeScreen(
 }
 
 @Composable
-private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppPicker: () -> Unit, onOpenDomainList: () -> Unit) {
+private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Unit, onOpenDomainList: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            val suggested = remember(state.apps, state.targetDailyHours) {
-                val weeklyTargetMs = state.targetDailyHours * 7 * 3600 * 1000L
-                if (state.weeklyUsageMs > weeklyTargetMs) {
-                    state.apps
-                        .filter { !it.isBlocked }
-                        .sortedByDescending { it.usageTimeMs }
-                        .take(3)
-                } else {
-                    emptyList()
-                }
+            val suggested = remember(state.apps) {
+                state.apps
+                    .filter { !it.isBlocked }
+                    .sortedByDescending { it.usageTimeMs }
+                    .take(3)
             }
 
-            if (suggested.isNotEmpty()) {
+            if (suggested.isNotEmpty() && suggested.any { it.usageTimeMs > 0 }) {
                 Text("Most used apps", style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 suggested.forEach { app ->
@@ -195,7 +196,7 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppPicker: () -> U
                         val appDailyAvgMs = app.usageTimeMs / 7.0
                         val appHours = appDailyAvgMs / (1000.0 * 3600.0)
                         val appMinutes = appDailyAvgMs / (1000.0 * 60.0)
-                        val appUsageText = if (appHours >= 1.0) "%.1f hour".format(appHours) else "%.0f min".format(appMinutes)
+                        val appUsageText = if (appHours >= 1.0) "%.1f h".format(appHours) else "%.0f m".format(appMinutes)
                         Text(app.appName, style = MaterialTheme.typography.bodyMedium)
                         Text(appUsageText, style = MaterialTheme.typography.bodySmall)
                     }
@@ -203,46 +204,40 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppPicker: () -> U
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Compact icon-based stats row
+            // Compact icon-based stats row (Daily Averages over 7 Days)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val context = LocalContext.current
-                val now = System.currentTimeMillis()
-                val diffMs = if (state.lastBreakRequestTime > 0) now - state.lastBreakRequestTime else 0L
-                val timeSinceText = when {
-                    diffMs < 60_000 -> "${diffMs / 1000}s"
-                    diffMs < 3600_000 -> "${diffMs / 60_000}m"
-                    diffMs < 86400_000 -> "${diffMs / 3600_000}h"
-                    else -> "${diffMs / 86400_000}d"
-                }
                 
+                // 1. Average time between breaks
                 StatItem(
                     icon = Icons.Default.Schedule, 
-                    text = timeSinceText,
-                    onClick = { Toast.makeText(context, "Time since last break", Toast.LENGTH_SHORT).show() }
-                )
-                StatItem(
-                    icon = Icons.Default.History, 
-                    text = "${state.totalBreaksCount}", 
-                    onClick = { Toast.makeText(context, "Number of breaks", Toast.LENGTH_SHORT).show() }
-                )
-                StatItem(
-                    icon = Icons.Default.Timer, 
-                    text = "${state.totalBreakTimeMs / (1000 * 60)}m", 
-                    onClick = { Toast.makeText(context, "Daily break time", Toast.LENGTH_SHORT).show() }
+                    text = formatDurationStat(state.avgTimeBetweenBreaksMs),
+                    onClick = { Toast.makeText(context, "Avg time between breaks (daily)", Toast.LENGTH_SHORT).show() }
                 )
                 
-                val dailyAverageMs = state.weeklyUsageMs / 7.0
-                val hours = dailyAverageMs / (1000.0 * 3600.0)
-                val minutes = dailyAverageMs / (1000.0 * 60.0)
-                val usageText = if (hours >= 1.0) "%.1fh".format(hours) else "%.0fm".format(minutes)
+                // 2. Average daily number of breaks
+                StatItem(
+                    icon = Icons.Default.History, 
+                    text = "%.1f".format(state.avgDailyBreaksCount), 
+                    onClick = { Toast.makeText(context, "Avg daily number of breaks", Toast.LENGTH_SHORT).show() }
+                )
+                
+                // 3. Daily break total time
+                StatItem(
+                    icon = Icons.Default.Timer, 
+                    text = formatDurationStat(state.avgDailyBreakTimeMs), 
+                    onClick = { Toast.makeText(context, "Daily average break time", Toast.LENGTH_SHORT).show() }
+                )
+                
+                // 4. Daily screen time
                 StatItem(
                     icon = Icons.AutoMirrored.Filled.TrendingUp, 
-                    text = usageText, 
-                    onClick = { Toast.makeText(context, "Daily usage", Toast.LENGTH_SHORT).show() }
+                    text = formatDurationStat(state.avgDailyScreenTimeMs), 
+                    onClick = { Toast.makeText(context, "Daily average screen time", Toast.LENGTH_SHORT).show() }
                 )
             }
 
@@ -252,7 +247,7 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppPicker: () -> U
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(onClick = onOpenAppPicker, modifier = Modifier.weight(1f)) {
+                Button(onClick = onOpenAppList, modifier = Modifier.weight(1f)) {
                     Text("Apps (${state.blockedAppCount})", maxLines = 1)
                 }
                 Button(onClick = onOpenDomainList, modifier = Modifier.weight(1f)) {
@@ -315,6 +310,18 @@ private fun formatCountdown(seconds: Int): String {
             val h = seconds / 3600
             val m = (seconds % 3600) / 60
             "${h}h ${m}m"
+        }
+    }
+}
+
+private fun formatDurationStat(ms: Long): String {
+    val seconds = ms / 1000
+    return when {
+        seconds < 60 -> "${seconds}s"
+        seconds < 3600 -> "${seconds / 60}m"
+        else -> {
+            val h = seconds / 3600.0
+            if (h >= 10.0) "%.0fh".format(h) else "%.1fh".format(h)
         }
     }
 }

@@ -46,15 +46,26 @@ import com.breakfree.app.ui.DomainSortOrder
 import com.breakfree.app.ui.DomainListViewModel
 import com.breakfree.app.ui.components.SearchTopAppBar
 
+import android.widget.Toast
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.flow.collectLatest
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DomainListScreen(
     onBack: () -> Unit,
-    onNavigateToBreak: () -> Unit,
     viewModel: DomainListViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    LaunchedEffect(viewModel.toastMessage) {
+        viewModel.toastMessage.collectLatest { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -114,12 +125,7 @@ fun DomainListScreen(
                         DomainItem(
                             domain = domain,
                             onToggleBlocked = { requestedBlocked ->
-                                // Allowing adding (true) but restricting removing (false)
-                                if (!requestedBlocked && !state.isBreakActive) {
-                                    onNavigateToBreak()
-                                } else {
-                                    viewModel.toggleBlock(domain, requestedBlocked)
-                                }
+                                viewModel.toggleBlock(domain, requestedBlocked)
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(domain) }
                         )
@@ -134,12 +140,7 @@ fun DomainListScreen(
                         DomainItem(
                             domain = domain,
                             onToggleBlocked = { requestedBlocked ->
-                                // Allowing adding (true) but restricting removing (false)
-                                if (!requestedBlocked && !state.isBreakActive) {
-                                    onNavigateToBreak()
-                                } else {
-                                    viewModel.toggleBlock(domain, requestedBlocked)
-                                }
+                                viewModel.toggleBlock(domain, requestedBlocked)
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(domain) }
                         )
