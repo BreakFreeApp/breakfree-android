@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var sensorManager: SensorManager
     private var shakeDetector: ShakeDetector? = null
+    private var isShakeEnabled: Boolean = false
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -118,6 +120,28 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         permissionRefreshTrigger++
+        if (isShakeEnabled) {
+            registerShakeDetector()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterShakeDetector()
+    }
+
+    private fun registerShakeDetector() {
+        if (shakeDetector != null) {
+            sensorManager.registerListener(
+                shakeDetector,
+                sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
+                SensorManager.SENSOR_DELAY_UI
+            )
+        }
+    }
+
+    private fun unregisterShakeDetector() {
+        shakeDetector?.let { sensorManager.unregisterListener(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,24 +154,24 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             val theme by settings.theme.collectAsState(initial = AppTheme.AUTO)
-            val shakeEnabled by settings.shakeToSendFeedback.collectAsState(initial = true)
+            val shakeEnabledSetting by settings.shakeToSendFeedback.collectAsState(initial = true)
             
             // Trigger recomposition when permissionRefreshTrigger changes
             val trigger = permissionRefreshTrigger 
             
-            LaunchedEffect(shakeEnabled) {
-                if (shakeEnabled) {
+            LaunchedEffect(shakeEnabledSetting) {
+                isShakeEnabled = shakeEnabledSetting
+                if (shakeEnabledSetting) {
                     shakeDetector = ShakeDetector {
-                        val screenshotPath = captureScreenshot()
-                        navController?.navigate("feedback?screenshot=$screenshotPath")
+                        val currentRoute = navController?.currentBackStackEntry?.destination?.route
+                        if (currentRoute?.startsWith("feedback") != true) {
+                            val screenshotPath = captureScreenshot()
+                            navController?.navigate("feedback?screenshot=$screenshotPath")
+                        }
                     }
-                    sensorManager.registerListener(
-                        shakeDetector,
-                        sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
-                        SensorManager.SENSOR_DELAY_UI
-                    )
+                    registerShakeDetector()
                 } else {
-                    shakeDetector?.let { sensorManager.unregisterListener(it) }
+                    unregisterShakeDetector()
                     shakeDetector = null
                 }
             }
@@ -160,7 +184,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        shakeDetector?.let { sensorManager.unregisterListener(it) }
+        unregisterShakeDetector()
     }
 
     private fun captureScreenshot(): String? {
@@ -199,7 +223,11 @@ private fun AppNavHost(activity: MainActivity, trigger: Int, onNavControllerCrea
                 onOpenDomainList = { navController.navigate("domains") },
                 onOpenSettings = { navController.navigate("settings") },
                 onOpenBreakManagement = { navController.navigate("break") },
-                onOpenFeedback = { navController.navigate("feedback") },
+                onOpenFeedback = {
+                    if (navController.currentBackStackEntry?.destination?.route?.startsWith("feedback") != true) {
+                        navController.navigate("feedback")
+                    }
+                },
                 onEnableAccessibility = { activity.openAccessibilitySettings() },
                 onEnableUsageStats = { activity.openUsageStatsSettings() },
                 onEnableOverlay = { activity.openOverlaySettings() },
