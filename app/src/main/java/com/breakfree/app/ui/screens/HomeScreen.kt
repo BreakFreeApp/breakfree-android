@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,12 +14,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -53,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toColorLong
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -282,20 +286,21 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
     var selectedTab by remember { mutableStateOf(0) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Tabs Row
+        Column() {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth().padding(0.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
             ) {
                 StatTabItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.AutoMirrored.Filled.List,
                     label = "Apps",
                     isSelected = selectedTab == 0,
                     onClick = { selectedTab = 0 }
                 )
                 StatTabItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.Default.Schedule,
                     label = "Interval",
                     value = formatValue(state.timeBetweenBreaks.val24h, true),
@@ -303,6 +308,7 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
                     onClick = { selectedTab = 1 }
                 )
                 StatTabItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.Default.History,
                     label = "Breaks",
                     value = "%.1f".format(state.dailyBreaksCount.val24h),
@@ -310,6 +316,7 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
                     onClick = { selectedTab = 2 }
                 )
                 StatTabItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.Default.Timer,
                     label = "Break Time",
                     value = formatValue(state.dailyBreakTime.val24h, true),
@@ -317,6 +324,7 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
                     onClick = { selectedTab = 3 }
                 )
                 StatTabItem(
+                    modifier = Modifier.weight(1f),
                     icon = Icons.AutoMirrored.Filled.TrendingUp,
                     label = "Usage",
                     value = formatValue(state.dailyScreenTime.val24h, true),
@@ -325,32 +333,32 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Main Content Area
-            Box(modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)) {
-                when (selectedTab) {
-                    0 -> MostUsedAppsContent(state)
-                    1 -> StatComparisonContent("Time Between Breaks", state.timeBetweenBreaks)
-                    2 -> StatComparisonContent("Daily Breaks Count", state.dailyBreaksCount)
-                    3 -> StatComparisonContent("Daily Break Time", state.dailyBreakTime)
-                    4 -> StatComparisonContent("Daily Screen Usage", state.dailyScreenTime)
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Main Content Area
+                Box(modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)) {
+                    when (selectedTab) {
+                        0 -> MostUsedAppsContent(state)
+                        1 -> StatComparisonContent("Time Between Breaks", state.timeBetweenBreaks)
+                        2 -> StatComparisonContent("Daily Breaks Count", state.dailyBreaksCount)
+                        3 -> StatComparisonContent("Daily Break Time", state.dailyBreakTime)
+                        4 -> StatComparisonContent("Daily Screen Usage", state.dailyScreenTime)
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(0.9f).align(Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(onClick = onOpenAppList, modifier = Modifier.weight(1f)) {
-                    Text("Apps (${state.blockedAppCount})", maxLines = 1)
-                }
-                Button(onClick = onOpenDomainList, modifier = Modifier.weight(1f)) {
-                    Text("Web (${state.blockedDomainCount})", maxLines = 1)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(0.9f).align(Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(onClick = onOpenAppList, modifier = Modifier.weight(1f)) {
+                        Text("Apps (${state.blockedAppCount})", maxLines = 1)
+                    }
+                    Button(onClick = onOpenDomainList, modifier = Modifier.weight(1f)) {
+                        Text("Web (${state.blockedDomainCount})", maxLines = 1)
+                    }
                 }
             }
         }
@@ -359,47 +367,61 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
 
 @Composable
 private fun StatTabItem(
+    modifier: Modifier,
     icon: ImageVector,
     label: String,
     value: String? = null,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    first: Boolean = false,
+    last: Boolean = false,
 ) {
-    Column(
-        modifier = Modifier
+    var backgroundColor = MaterialTheme.colorScheme.onPrimary
+    if (isSelected){
+        backgroundColor = MaterialTheme.colorScheme.primaryContainer
+    }
+
+    var shape = RoundedCornerShape(0)
+    if (first) {
+        shape = RoundedCornerShape(topStart = 16.dp)
+    }
+    if (last){
+        shape = RoundedCornerShape(topEnd = 16.dp)
+    }
+
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
             .clickable(onClick = onClick)
-            .padding(4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            modifier = Modifier.size(24.dp),
-            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        )
-        if (value != null) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            .background(backgroundColor,shape=shape)
+    ){
+        Column(
+            modifier = Modifier.fillMaxSize().fillMaxHeight().fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(24.dp),
+                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
-        } else {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 2.dp)
-                    .size(width = 12.dp, height = 2.dp)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
-            )
+            if (value != null) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -415,7 +437,7 @@ private fun MostUsedAppsContent(state: HomeUiState) {
 
     Column {
         if (suggested.isNotEmpty() && suggested.any { it.usageTimeMs > 0 }) {
-            Text("Top unblocked apps (Last 7d)", style = MaterialTheme.typography.titleSmall)
+            Text("Most used apps", style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(8.dp))
             suggested.forEach { app ->
                 Row(
@@ -473,26 +495,22 @@ private fun StatComparisonItem(
             fontWeight = FontWeight.Bold
         )
         
-        if (!isBaseline) {
-            val diff = value - baseline
-            val percent = if (baseline > 0) (diff / baseline) * 100 else 0.0
-            
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (diff >= 0) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = if (diff >= 0) Color(0xFF4CAF50) else Color(0xFFF44336)
-                )
-                Text(
-                    text = "%.0f%%".format(Math.abs(percent)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (diff >= 0) Color(0xFF4CAF50) else Color(0xFFF44336)
-                )
-            }
-        } else {
-            Spacer(modifier = Modifier.height(14.dp))
-            Text("Avg", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+
+        val diff = value - baseline
+        val percent = if (baseline > 0) (diff / baseline) * 100 else 0.0
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (diff >= 0) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = if (diff >= 0) Color(0xFF4CAF50) else Color(0xFFF44336)
+            )
+            Text(
+                text = "%.0f%%".format(Math.abs(percent)),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (diff >= 0) Color(0xFF4CAF50) else Color(0xFFF44336)
+            )
         }
     }
 }
