@@ -41,6 +41,7 @@ import com.breakfree.android.R
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.ui.BlockOverlayActivity
 import com.breakfree.app.ui.theme.BreakFreeTheme
+import com.breakfree.app.data.model.AppInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,10 +63,20 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     private lateinit var scope: CoroutineScope
     @Volatile private var blockedPackages: Set<String> = emptySet()
     @Volatile private var blockedDomains: Set<String> = emptySet()
+    @Volatile private var doomscrollWhitelist: Set<String> = emptySet()
+    @Volatile private var mostUsedApps: Set<String> = emptySet()
+    @Volatile private var doomscrollProtectionEnabled: Boolean = false
+    @Volatile private var targetScreenTimeMinutes: Int = 60
+    
     private var ownPackageName: String = ""
     
     private var overlayView: View? = null
     private var lifecycleOwner: ServiceLifecycleOwner? = null
+
+    // Doomscrolling monitor state
+    private var currentForegroundApp: String? = null
+    private var appStartTime: Long = 0
+    private var doomscrollJob: Job? = null
 
     // URL monitoring state
     private var lastSeenUrl: String? = null
@@ -90,6 +101,32 @@ class BreakFreeAccessibilityService : AccessibilityService() {
         scope.launch {
             app.repository.observeBlockedDomains().collectLatest { domains ->
                 blockedDomains = domains.filter { it.isBlocked }.map { it.domain.lowercase() }.toSet()
+            }
+        }
+
+        scope.launch {
+            app.settingsDataStore.doomscrollingProtectionEnabled.collectLatest { enabled ->
+                doomscrollProtectionEnabled = enabled
+                if (!enabled) cancelDoomscrollCheck()
+            }
+        }
+
+        scope.launch {
+            app.settingsDataStore.targetScreenTimeMinutes.collectLatest { mins ->
+                targetScreenTimeMinutes = mins
+            }
+        }
+
+        scope.launch {
+            app.appRepository.apps.collectLatest { apps ->
+                doomscrollWhitelist = apps.filter { it.isDoomscrollWhitelisted }.map { it.packageName }.toSet()
+                
+                // Identify "most used apps" - e.g., top 5 apps by usage time
+                mostUsedApps = apps.sortedByDescending { it.usageTimeMs }
+                    .take(5)
+                    .filter { it.usageTimeMs > 0 }
+                    .map { it.packageName }
+                    .toSet()
             }
         }
         
@@ -124,6 +161,9 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     private fun handleWindowStateChanged(packageName: String) {
         val app = BreakFreeApplication.from(this)
         val isBreakActive = app.breakStateManager.isBreakActiveNow()
+
+        // Update doomscrolling monitor
+        updateDoomscrollMonitor(packageName)
 
         // 1. Regular App Blocking (Non-browser apps)
         if (packageName in blockedPackages) {
@@ -318,6 +358,78 @@ class BreakFreeAccessibilityService : AccessibilityService() {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             )
         startActivity(intent)
+    }
+
+    private fun updateDoomscrollMonitor(packageName: String) {
+        if (!doomscrollProtectionEnabled) return
+        
+        if (packageName == currentForegroundApp) return
+        
+        cancelDoomscrollCheck()
+        
+        currentForegroundApp = packageName
+        appStartTime = System.currentTimeMillis()
+        
+        // Don't monitor system apps, blocked apps, or whitelisted apps
+        if (packageName == "com.android.settings" || 
+            packageName.contains("android.settings") ||
+            packageName == "com.android.systemui" ||
+            packageName in blockedPackages ||
+            packageName in doomscrollWhitelist) {
+            return
+        }
+
+        // Only monitor "most used apps" as per requirement
+        if (packageName !in mostUsedApps) return
+
+        // Start 5-minute timer
+        doomscrollJob = scope.launch {
+            delay(5 * 60 * 1000) // 5 minutes
+            triggerDoomscrollWarning(packageName)
+        }
+    }
+
+    private fun cancelDoomscrollCheck() {
+        doomscrollJob?.cancel()
+        doomscrollJob = null
+    }
+
+    private fun triggerDoomscrollWarning(packageName: String) {
+        val appLabel = try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+        } catch (e: Exception) {
+            packageName
+        }
+
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "doomscroll_warnings"
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId, "Doomscroll Warnings",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val intent = Intent(this, com.breakfree.app.ui.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this, 0, intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = androidx.core.app.NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Time Check!")
+            .setContentText("You've been using $appLabel for 5 minutes. Is this a good use of your time?")
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notificationManager.notify(2, notification)
     }
 
     override fun onInterrupt() { /* no-op */ }

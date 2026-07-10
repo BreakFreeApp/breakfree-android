@@ -9,6 +9,7 @@ import android.util.Log
 import com.breakfree.app.data.db.dao.AppMetadataDao
 import com.breakfree.app.data.db.entities.AppMetadata
 import com.breakfree.app.data.model.AppInfo
+import com.breakfree.app.data.settings.AppDefaults
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,8 +77,9 @@ class AppRepository(
                 app.copy(
                     usageTimeMs = usageStats[app.packageName] ?: 0L,
                     popularityScore = popularity[app.packageName] ?: 0,
-                    isFavorite = cached?.isFavorite ?: false,
-                    isBlocked = blockedPackageNames.contains(app.packageName)
+                    isFavorite = cached?.isFavorite ?: AppDefaults.DEFAULT_FAVORITES.contains(app.packageName),
+                    isBlocked = blockedPackageNames.contains(app.packageName),
+                    isDoomscrollWhitelisted = cached?.isDoomscrollWhitelisted ?: AppDefaults.DEFAULT_DOOMSCROLL_WHITELIST.contains(app.packageName)
                 )
             }
             
@@ -89,7 +91,7 @@ class AppRepository(
         }
     }
 
-    private fun isUsageStatsPermissionGranted(): Boolean {
+    fun isUsageStatsPermissionGranted(): Boolean {
         return try {
             val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
                 ?: return false
@@ -119,7 +121,12 @@ class AppRepository(
         return try {
             pm.queryIntentActivities(intent, 0)
                 .distinctBy { it.activityInfo.packageName }
-                .filter { it.activityInfo.packageName != ownPackage }
+                .filter { 
+                    val pkg = it.activityInfo.packageName
+                    pkg != ownPackage && 
+                    pkg != "com.android.settings" && 
+                    !pkg.contains("android.settings")
+                }
                 .map { resolveInfo ->
                     AppInfo(
                         packageName = resolveInfo.activityInfo.packageName,
@@ -193,6 +200,28 @@ class AppRepository(
         }
     }
 
+    suspend fun setDoomscrollWhitelisted(packageName: String, isWhitelisted: Boolean) = withContext(Dispatchers.IO) {
+        try {
+            val current = _apps.value
+            appMetadataDao.updateDoomscrollWhitelisted(packageName, isWhitelisted)
+            _apps.value = current.map {
+                if (it.packageName == packageName) it.copy(isDoomscrollWhitelisted = isWhitelisted) else it
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set doomscroll whitelist", e)
+        }
+    }
+
+    suspend fun toggleDoomscrollWhitelist(packageName: String) = withContext(Dispatchers.IO) {
+        try {
+            val current = _apps.value
+            val app = current.find { it.packageName == packageName } ?: return@withContext
+            setDoomscrollWhitelisted(packageName, !app.isDoomscrollWhitelisted)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle doomscroll whitelist", e)
+        }
+    }
+
     suspend fun updateBlockedStatus(blockedPackageNames: Set<String>) = withContext(Dispatchers.IO) {
         try {
             val current = _apps.value
@@ -212,7 +241,8 @@ class AppRepository(
         usageTimeMs = usageTimeMs,
         popularityScore = popularityScore,
         isFavorite = isFavorite,
-        isBlocked = isBlocked
+        isBlocked = isBlocked,
+        isDoomscrollWhitelisted = isDoomscrollWhitelisted
     )
 
     private fun AppInfo.toEntity() = AppMetadata(
@@ -221,6 +251,7 @@ class AppRepository(
         usageTimeMs = usageTimeMs,
         popularityScore = popularityScore,
         isFavorite = isFavorite,
-        isBlocked = isBlocked
+        isBlocked = isBlocked,
+        isDoomscrollWhitelisted = isDoomscrollWhitelisted
     )
 }

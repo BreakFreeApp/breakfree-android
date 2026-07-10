@@ -20,6 +20,9 @@ interface AppMetadataDao {
     @Query("UPDATE app_metadata_cache SET isFavorite = :isFavorite WHERE packageName = :packageName")
     suspend fun updateFavorite(packageName: String, isFavorite: Boolean)
 
+    @Query("UPDATE app_metadata_cache SET isDoomscrollWhitelisted = :isWhitelisted WHERE packageName = :packageName")
+    suspend fun updateDoomscrollWhitelisted(packageName: String, isWhitelisted: Boolean)
+
     @Query("DELETE FROM app_metadata_cache")
     suspend fun clearAll()
 }

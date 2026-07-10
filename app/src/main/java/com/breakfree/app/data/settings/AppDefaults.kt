@@ -26,4 +26,15 @@ object AppDefaults {
         "linkedin.com",
         "twitch.tv"
     )
+
+    val DEFAULT_DOOMSCROLL_WHITELIST = setOf(
+        "com.google.android.apps.maps",
+        "com.waze"
+    )
+
+    val DEFAULT_FAVORITES = setOf(
+        "com.google.android.gm",
+        "org.telegram.messenger",
+        "com.discord"
+    )
 }

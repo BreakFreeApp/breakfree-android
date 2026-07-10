@@ -3,7 +3,6 @@ package com.breakfree.app.ui.components
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,9 +51,9 @@ fun SearchTopAppBar(
                     value = searchQuery,
                     onValueChange = onSearchQueryChange,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyLarge) },
+                        .fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyMedium) },
                     trailingIcon = {
                         IconButton(onClick = {
                             isSearchExpanded = false

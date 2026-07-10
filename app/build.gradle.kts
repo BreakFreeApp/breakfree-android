@@ -9,11 +9,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     //Playstore automation
     id("com.github.triplet.play") version "4.0.0"
+
 }
 
 android {
     namespace = "com.breakfree.android"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.breakfree.android"
@@ -70,23 +71,23 @@ kotlin {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
-    implementation("androidx.activity:activity-compose:1.9.1")
+    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
 
     // Compose
-    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation("androidx.navigation:navigation-compose:2.9.8")
 
     // Coil (Image loading)
-    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Room
     implementation("androidx.room:room-runtime:2.8.4")
@@ -94,10 +95,10 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.4")
 
     // DataStore (settings + break state persistence)
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     // WorkManager (periodic asset sync)
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
@@ -127,5 +128,5 @@ play {
         println("ℹ️ INFO: Play Publisher credentials skipped (play.key.path is missing or empty).")
     }
 
-    track.set("interanl")
+    track.set("internal")
 }

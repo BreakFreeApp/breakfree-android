@@ -49,11 +49,11 @@ private val LightColors = lightColorScheme(
 
 @Composable
 fun BreakFreeTheme(
-    appTheme: AppTheme = AppTheme.SYSTEM,
+    appTheme: AppTheme = AppTheme.AUTO,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (appTheme) {
-        AppTheme.SYSTEM -> isSystemInDarkTheme()
+        AppTheme.AUTO -> isSystemInDarkTheme()
         AppTheme.LIGHT -> false
         AppTheme.DARK -> true
     }

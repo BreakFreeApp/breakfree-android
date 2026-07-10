@@ -10,5 +10,6 @@ data class AppMetadata(
     val usageTimeMs: Long = 0,
     val popularityScore: Int = 0,
     val isFavorite: Boolean = false,
-    val isBlocked: Boolean = false
+    val isBlocked: Boolean = false,
+    val isDoomscrollWhitelisted: Boolean = false
 )

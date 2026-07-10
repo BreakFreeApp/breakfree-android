@@ -14,7 +14,7 @@ private val Context.settingsDataStore by preferencesDataStore(name = "breakfree_
 
 data class BreakDurationOption(val label: String, val seconds: Int)
 
-enum class AppTheme { SYSTEM, LIGHT, DARK }
+enum class AppTheme { AUTO, LIGHT, DARK }
 
 class SettingsDataStore(private val context: Context) {
 
@@ -28,6 +28,9 @@ class SettingsDataStore(private val context: Context) {
         val TOTAL_BREAK_TIME_MS = longPreferencesKey("total_break_time_ms")
         val SHOW_BREAK_NOTIFICATION = booleanPreferencesKey("show_break_notification")
         val AUTO_STOP_ON_LOCK_TIMEOUT_MINUTES = intPreferencesKey("auto_stop_on_lock_timeout_minutes")
+        val SHAKE_TO_SEND_FEEDBACK = booleanPreferencesKey("shake_to_send_feedback")
+        val DOOMSCROLLING_PROTECTION_ENABLED = booleanPreferencesKey("doomscrolling_protection_enabled")
+        val TARGET_SCREEN_TIME_MINUTES = intPreferencesKey("target_screen_time_minutes")
     }
 
     val gracePeriodSeconds: Flow<Int> = context.settingsDataStore.data.map {
@@ -36,9 +39,9 @@ class SettingsDataStore(private val context: Context) {
 
     val theme: Flow<AppTheme> = context.settingsDataStore.data.map {
         try {
-            AppTheme.valueOf(it[Keys.THEME] ?: AppTheme.SYSTEM.name)
+            AppTheme.valueOf(it[Keys.THEME] ?: AppTheme.AUTO.name)
         } catch (e: Exception) {
-            AppTheme.SYSTEM
+            AppTheme.AUTO
         }
     }
 
@@ -64,6 +67,18 @@ class SettingsDataStore(private val context: Context) {
 
     val autoStopOnLockTimeoutMinutes: Flow<Int> = context.settingsDataStore.data.map {
         it[Keys.AUTO_STOP_ON_LOCK_TIMEOUT_MINUTES] ?: 1 // Default 1 min
+    }
+
+    val shakeToSendFeedback: Flow<Boolean> = context.settingsDataStore.data.map {
+        it[Keys.SHAKE_TO_SEND_FEEDBACK] ?: true
+    }
+
+    val doomscrollingProtectionEnabled: Flow<Boolean> = context.settingsDataStore.data.map {
+        it[Keys.DOOMSCROLLING_PROTECTION_ENABLED] ?: false
+    }
+
+    val targetScreenTimeMinutes: Flow<Int> = context.settingsDataStore.data.map {
+        it[Keys.TARGET_SCREEN_TIME_MINUTES] ?: 60 // Default 1 hour
     }
 
     val durationOptions: Flow<List<BreakDurationOption>> = context.settingsDataStore.data.map { prefs ->
@@ -95,6 +110,18 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setAutoStopOnLockTimeoutMinutes(minutes: Int) {
         context.settingsDataStore.edit { it[Keys.AUTO_STOP_ON_LOCK_TIMEOUT_MINUTES] = minutes }
+    }
+
+    suspend fun setShakeToSendFeedback(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.SHAKE_TO_SEND_FEEDBACK] = enabled }
+    }
+
+    suspend fun setDoomscrollingProtectionEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.DOOMSCROLLING_PROTECTION_ENABLED] = enabled }
+    }
+
+    suspend fun setTargetScreenTimeMinutes(minutes: Int) {
+        context.settingsDataStore.edit { it[Keys.TARGET_SCREEN_TIME_MINUTES] = minutes }
     }
 
     suspend fun recordBreakRequest() {

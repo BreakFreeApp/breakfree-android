@@ -13,7 +13,7 @@ import com.breakfree.app.data.db.entities.BlockedDomain
 
 @Database(
     entities = [BlockedApp::class, BlockedDomain::class, AppMetadata::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class BreakFreeDatabase : RoomDatabase() {

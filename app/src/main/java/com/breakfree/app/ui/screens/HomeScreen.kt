@@ -1,22 +1,31 @@
 package com.breakfree.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Coffee
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -38,13 +47,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.ui.HomeUiState
 import com.breakfree.app.ui.HomeViewModel
+import com.breakfree.app.ui.components.PermissionInfo
+import com.breakfree.app.ui.components.PermissionsCard
 import com.breakfree.app.ui.components.SearchTopAppBar
+import androidx.core.net.toUri
+import com.breakfree.app.ui.FeedbackViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -53,6 +68,7 @@ fun HomeScreen(
     onOpenDomainList: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenBreakManagement: () -> Unit,
+    onOpenFeedback: () -> Unit,
     onEnableAccessibility: () -> Unit,
     onEnableUsageStats: () -> Unit,
     onEnableOverlay: () -> Unit,
@@ -65,14 +81,14 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val onCancelBreak = { viewModel.cancelBreak() }
+    val context = LocalContext.current
     
-    // Use remember(refreshTrigger) to ensure these values are re-calculated when the trigger changes
     val accessibilityEnabled = remember(refreshTrigger) { isAccessibilityEnabled() }
     val usageStatsEnabled = remember(refreshTrigger) { isUsageStatsEnabled() }
     val overlayEnabled = remember(refreshTrigger) { isOverlayEnabled() }
     val notificationsEnabled = remember(refreshTrigger) { isNotificationsEnabled() }
 
-    // Trigger update when usage permission is granted
     LaunchedEffect(usageStatsEnabled) {
         if (usageStatsEnabled) {
             viewModel.onUsagePermissionGranted()
@@ -84,6 +100,7 @@ fun HomeScreen(
             SearchTopAppBar(
                 title = "BreakFree",
                 searchEnabled = false,
+                showLogo = true,
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -92,82 +109,172 @@ fun HomeScreen(
             )
         }
     ) { padding ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            StatsAndSuggestionsCard(state, onOpenAppList, onOpenDomainList)
-
-            if (!accessibilityEnabled) {
-                SetupCard(
-                    title = "App blocking needs Accessibility permission",
-                    body = "Required to detect when a blocked app opens.",
-                    actionLabel = "Enable",
-                    onAction = onEnableAccessibility,
-                    isEnabled = accessibilityEnabled
-                )
-            }
-
-            if (!usageStatsEnabled) {
-                SetupCard(
-                    title = "Usage sorting needs Permission",
-                    body = "Required to sort apps by your actual usage time.",
-                    actionLabel = "Enable",
-                    onAction = onEnableUsageStats
-                )
-            }
-
-            if (!overlayEnabled) {
-                SetupCard(
-                    title = "Better blocking needs Overlay permission",
-                    body = "Required to show the block screen without switching apps.",
-                    actionLabel = "Enable",
-                    onAction = onEnableOverlay
-                )
-            }
-
-            if (!notificationsEnabled) {
-                SetupCard(
-                    title = "Break timer needs Notification permission",
-                    body = "Required to show a countdown while a break is active.",
-                    actionLabel = "Enable",
-                    onAction = onEnableNotifications
-                )
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    if (state.phase == BreakPhase.ACTIVE) {
-                        viewModel.cancelBreak()
-                    } else {
-                        onOpenBreakManagement()
-                    }
-                },
-                colors = if (state.phase == BreakPhase.ACTIVE) {
-                    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-                } else {
-                    CardDefaults.cardColors(containerColor = Color.White, contentColor = Color.Black)
-                }
+            val minHeight = maxHeight
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .heightIn(min = minHeight)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                // 1 & 2: Top Sections
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    val label = when(state.phase) {
-                        BreakPhase.NONE -> "Request a break"
-                        BreakPhase.GRACE -> "Break Pending..."
-                        BreakPhase.CHALLENGE -> "Confirm Break"
-                        BreakPhase.ACTIVE -> "End the break (${formatCountdown(state.activeSecondsRemaining)})"
+                    StatsAndSuggestionsCard(state, onOpenAppList, onOpenDomainList)
+                    
+                    val permissions = remember(accessibilityEnabled, usageStatsEnabled, overlayEnabled, notificationsEnabled) {
+                        listOf(
+                            PermissionInfo(
+                                name = "Accessibility",
+                                description = "Required to detect and block apps.",
+                                isGranted = accessibilityEnabled,
+                                onEnable = onEnableAccessibility
+                            ),
+                            PermissionInfo(
+                                name = "Usage Stats",
+                                description = "Required to track app usage time.",
+                                isGranted = usageStatsEnabled,
+                                onEnable = onEnableUsageStats
+                            ),
+                            PermissionInfo(
+                                name = "Overlay",
+                                description = "Required to show the block screen.",
+                                isGranted = overlayEnabled,
+                                onEnable = onEnableOverlay
+                            ),
+                            PermissionInfo(
+                                name = "Notifications",
+                                description = "Required for the break timer.",
+                                isGranted = notificationsEnabled,
+                                onEnable = onEnableNotifications
+                            )
+                        )
                     }
-                    Text(label, style = MaterialTheme.typography.titleMedium)
+                    PermissionsCard(permissions = permissions)
                 }
+
+                // Center the break button in the remaining space
+                Spacer(modifier = Modifier.weight(1f))
+
+                // 3: Middle Section (Break Button)
+                StartStopBreakSection(state, onCancelBreak ,onOpenBreakManagement )
+
+                // Balance the vertical centering
+                Spacer(modifier = Modifier.weight(1f))
+
+                // 4: Bottom Section (Contribute)
+                ContributeSection(
+                    onFeedback = onOpenFeedback,
+                    onGitHub = {
+                        val intent = Intent(Intent.ACTION_VIEW,
+                            "https://github.com/BreakFreeApp/breakfree-android".toUri())
+                        context.startActivity(intent)
+                    },
+                    onCoffee = {
+                        val intent = Intent(Intent.ACTION_VIEW, "https://ko-fi.com/cesarem".toUri())
+                        context.startActivity(intent)
+                    }
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun StartStopBreakSection(state: HomeUiState, onCancelBreak: ()->Unit, onOpenBreakManagement: ()->Unit  ) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        onClick = {
+            if (state.phase == BreakPhase.ACTIVE) {
+                onCancelBreak()
+            } else {
+                onOpenBreakManagement()
+            }
+        },
+        colors = if (state.phase == BreakPhase.ACTIVE) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+        } else {
+            CardDefaults.cardColors(containerColor = Color.White, contentColor = Color.Black)
+        },
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val label = when(state.phase) {
+                BreakPhase.NONE -> "Request a break"
+                BreakPhase.GRACE -> "Break Pending..."
+                BreakPhase.CHALLENGE -> "Confirm Break"
+                BreakPhase.ACTIVE -> "End the break (${formatCountdown(state.activeSecondsRemaining)})"
+            }
+            Text(label, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun ContributeSection(onFeedback: () -> Unit, onGitHub: () -> Unit, onCoffee: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Text(
+            text = "Contribute",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 12.dp),
+            textAlign = TextAlign.Center
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ContributeButton(
+                icon = Icons.Default.Feedback,
+                text = "Feedback",
+                onClick = onFeedback,
+                modifier = Modifier.weight(1f)
+            )
+            ContributeButton(
+                icon = Icons.Default.Code,
+                text = "Code",
+                onClick = onGitHub,
+                modifier = Modifier.weight(1f)
+            )
+            ContributeButton(
+                icon = Icons.Default.Coffee,
+                text = "Coffee",
+                onClick = onCoffee,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContributeButton(
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.aspectRatio(1f)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -204,7 +311,6 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Compact icon-based stats row (Daily Averages over 7 Days)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -212,28 +318,24 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
             ) {
                 val context = LocalContext.current
                 
-                // 1. Average time between breaks
                 StatItem(
                     icon = Icons.Default.Schedule, 
                     text = formatDurationStat(state.avgTimeBetweenBreaksMs),
                     onClick = { Toast.makeText(context, "Avg time between breaks (daily)", Toast.LENGTH_SHORT).show() }
                 )
                 
-                // 2. Average daily number of breaks
                 StatItem(
                     icon = Icons.Default.History, 
                     text = "%.1f".format(state.avgDailyBreaksCount), 
                     onClick = { Toast.makeText(context, "Avg daily number of breaks", Toast.LENGTH_SHORT).show() }
                 )
                 
-                // 3. Daily break total time
                 StatItem(
                     icon = Icons.Default.Timer, 
                     text = formatDurationStat(state.avgDailyBreakTimeMs), 
                     onClick = { Toast.makeText(context, "Daily average break time", Toast.LENGTH_SHORT).show() }
                 )
                 
-                // 4. Daily screen time
                 StatItem(
                     icon = Icons.AutoMirrored.Filled.TrendingUp, 
                     text = formatDurationStat(state.avgDailyScreenTimeMs), 
@@ -259,7 +361,7 @@ private fun StatsAndSuggestionsCard(state: HomeUiState, onOpenAppList: () -> Uni
 }
 
 @Composable
-private fun StatItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
+private fun StatItem(icon: ImageVector, text: String, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.clickable(onClick = onClick).padding(4.dp)
@@ -275,28 +377,6 @@ private fun StatItem(icon: androidx.compose.ui.graphics.vector.ImageVector, text
     }
 }
 
-@Composable
-private fun SetupCard(title: String, body: String, actionLabel: String, onAction: () -> Unit, isEnabled: Boolean = false) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                if (isEnabled) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Enabled",
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-            Text(body, style = MaterialTheme.typography.bodySmall)
-            if (!isEnabled) {
-                Button(onClick = onAction) { Text(actionLabel) }
-            }
-        }
-    }
-}
 
 private fun formatCountdown(seconds: Int): String {
     return when {
