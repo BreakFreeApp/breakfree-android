@@ -49,6 +49,10 @@ class BreakFreeApplication : Application(), ImageLoaderFactory {
 
     val breakStateManager: BreakStateManager by lazy { BreakStateManager(this, breakStateStore) }
 
+    val requestBreakUseCase by lazy { com.breakfree.app.domain.RequestBreakUseCase(breakStateManager, settingsDataStore) }
+    val confirmBreakUseCase by lazy { com.breakfree.app.domain.ConfirmBreakUseCase(breakStateManager) }
+    val cancelBreakUseCase by lazy { com.breakfree.app.domain.CancelBreakUseCase(breakStateManager) }
+
     private val breakNotificationManager by lazy { BreakNotificationManager(this) }
 
     override fun onCreate() {
@@ -65,7 +69,7 @@ class BreakFreeApplication : Application(), ImageLoaderFactory {
             }
         }
 
-        // Notification management loop
+        // Notification management
         applicationScope.launch {
             combine(
                 breakStateManager.state,
@@ -73,14 +77,7 @@ class BreakFreeApplication : Application(), ImageLoaderFactory {
             ) { state, show -> state to show }
                 .collect { (state, show) ->
                     if (show && state.phase == BreakPhase.ACTIVE) {
-                        // Start a local loop to update every second while active
-                        while (true) {
-                            val currentState = breakStateManager.state.value
-                            if (currentState.phase != BreakPhase.ACTIVE) break
-                            
-                            breakNotificationManager.updateNotification(currentState)
-                            delay(1000)
-                        }
+                        breakNotificationManager.updateNotification(state)
                     } else {
                         breakNotificationManager.cancelNotification()
                     }

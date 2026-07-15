@@ -38,6 +38,7 @@ import com.breakfree.android.R
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.ui.HomeViewModel
 import com.breakfree.app.ui.components.SearchTopAppBar
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 data class ChallengeUiState(
@@ -122,7 +123,7 @@ fun BreakScreen(onBack: () -> Unit, viewModel: HomeViewModel = viewModel()) {
             ) {
                 Column(modifier = Modifier.padding(top = 8.dp)) {
                     Text(
-                        "Duration: ${durationOptions[sliderValue.toInt()].first}",
+                        "Duration: ${durationOptions[sliderValue.roundToInt()].first}",
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -136,7 +137,7 @@ fun BreakScreen(onBack: () -> Unit, viewModel: HomeViewModel = viewModel()) {
                     if (isStep1Active) {
                         Button(
                             onClick = { 
-                                viewModel.requestBreak(durationOptions[sliderValue.toInt()].second)
+                                viewModel.requestBreak(durationOptions[sliderValue.roundToInt()].second)
                                 internalFlowPhase = BreakPhase.GRACE
                             },
                             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)

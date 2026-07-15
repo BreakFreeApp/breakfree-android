@@ -94,7 +94,7 @@ class BreakStateManager(
     }
 
     /** Self-healing: derive the true phase from timestamps, not just the stored label. */
-    private fun effective(s: PersistedBreakState, now: Long): PersistedBreakState = when (s.phase) {
+    fun effective(s: PersistedBreakState, now: Long): PersistedBreakState = when (s.phase) {
         BreakPhase.GRACE -> if (now >= s.graceEndsAtEpochMs) {
             s.copy(phase = BreakPhase.CHALLENGE)
         } else s

@@ -66,6 +66,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakfree.app.data.settings.BreakPhase
 import com.breakfree.app.ui.HomeUiState
 import com.breakfree.app.ui.HomeViewModel
+import com.breakfree.app.ui.MainActivity
 import com.breakfree.app.ui.components.PermissionInfo
 import com.breakfree.app.ui.components.PermissionsCard
 import com.breakfree.app.ui.components.SearchTopAppBar
@@ -122,102 +123,108 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            val minHeight = maxHeight
+            val contentMaxHeight = maxHeight
             
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp, vertical = 16.dp)
-                    .heightIn(min = minHeight)
             ) {
-                // 1 & 2: Top Sections
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = contentMaxHeight - 32.dp), // Adjust for vertical padding
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    StatsAndSuggestionsCard(state, onOpenAppList, onOpenDomainList)
-                    
-                    val permissions = remember(accessibilityEnabled, usageStatsEnabled, overlayEnabled, notificationsEnabled) {
-                        listOf(
-                            PermissionInfo(
-                                name = "Accessibility",
-                                description = "Required to detect and block apps.",
-                                isGranted = accessibilityEnabled,
-                                onEnable = onEnableAccessibility
-                            ),
-                            PermissionInfo(
-                                name = "Usage Stats",
-                                description = "Required to track app usage time.",
-                                isGranted = usageStatsEnabled,
-                                onEnable = onEnableUsageStats
-                            ),
-                            PermissionInfo(
-                                name = "Overlay",
-                                description = "Required to show the block screen.",
-                                isGranted = overlayEnabled,
-                                onEnable = onEnableOverlay
-                            ),
-                            PermissionInfo(
-                                name = "Notifications",
-                                description = "Required for the break timer.",
-                                isGranted = notificationsEnabled,
-                                onEnable = onEnableNotifications
-                            )
-                        )
-                    }
-                    PermissionsCard(permissions = permissions)
-                }
-
-                // Center the break button in the remaining space
-                Spacer(modifier = Modifier.weight(1f))
-
-                // 3: Middle Section (Break Button)
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    onClick = {
-                        if (state.phase == BreakPhase.ACTIVE) {
-                            viewModel.cancelBreak()
-                        } else {
-                            onOpenBreakManagement()
-                        }
-                    },
-                    colors = if (state.phase == BreakPhase.ACTIVE) {
-                        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-                    } else {
-                        CardDefaults.cardColors(containerColor = Color.White, contentColor = Color.Black)
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                    // Top Content
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        val label = when(state.phase) {
-                            BreakPhase.NONE -> "Request a break"
-                            BreakPhase.GRACE -> "Break Pending..."
-                            BreakPhase.CHALLENGE -> "Confirm Break"
-                            BreakPhase.ACTIVE -> "End the break (${formatCountdown(state.activeSecondsRemaining)})"
+                        StatsAndSuggestionsCard(state, onOpenAppList, onOpenDomainList)
+                        
+                        val permissions = remember(accessibilityEnabled, usageStatsEnabled, overlayEnabled, notificationsEnabled) {
+                            listOf(
+                                PermissionInfo(
+                                    name = "Accessibility",
+                                    description = "Required to detect and block apps.",
+                                    isGranted = accessibilityEnabled,
+                                    onEnable = onEnableAccessibility
+                                ),
+                                PermissionInfo(
+                                    name = "Usage Stats",
+                                    description = "Required to track app usage time.",
+                                    isGranted = usageStatsEnabled,
+                                    onEnable = onEnableUsageStats
+                                ),
+                                PermissionInfo(
+                                    name = "Overlay",
+                                    description = "Required to show the block screen.",
+                                    isGranted = overlayEnabled,
+                                    onEnable = onEnableOverlay
+                                ),
+                                PermissionInfo(
+                                    name = "Notifications",
+                                    description = "Required for the break timer.",
+                                    isGranted = notificationsEnabled,
+                                    onEnable = onEnableNotifications
+                                )
+                            )
                         }
-                        Text(label, style = MaterialTheme.typography.titleMedium)
+                        PermissionsCard(permissions = permissions)
                     }
+
+                    // Middle Section (Break Button) - Centered in remaining space
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        onClick = {
+                            if (state.phase == BreakPhase.ACTIVE) {
+                                viewModel.cancelBreak()
+                            } else {
+                                onOpenBreakManagement()
+                            }
+                        },
+                        colors = if (state.phase == BreakPhase.ACTIVE) {
+                            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val label = when(state.phase) {
+                                BreakPhase.NONE -> "Request a break"
+                                BreakPhase.GRACE -> "Break Pending..."
+                                BreakPhase.CHALLENGE -> "Confirm Break"
+                                BreakPhase.ACTIVE -> "End the break (${formatCountdown(state.activeSecondsRemaining)})"
+                            }
+                            Text(
+                                text = label, 
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Bottom Section (Contribute)
+                    ContributeSection(
+                        onFeedback = onOpenFeedback,
+                        onGitHub = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/BreakFreeApp/breakfree-android"))
+                            context.startActivity(intent)
+                        },
+                        onCoffee = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://ko-fi.com/cesarem"))
+                            context.startActivity(intent)
+                        }
+                    )
                 }
-
-                // Balance the vertical centering
-                Spacer(modifier = Modifier.weight(1f))
-
-                // 4: Bottom Section (Contribute)
-                ContributeSection(
-                    onFeedback = onOpenFeedback,
-                    onGitHub = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/BreakFreeApp/breakfree-android"))
-                        context.startActivity(intent)
-                    },
-                    onCoffee = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://ko-fi.com/cesarem"))
-                        context.startActivity(intent)
-                    }
-                )
             }
         }
     }

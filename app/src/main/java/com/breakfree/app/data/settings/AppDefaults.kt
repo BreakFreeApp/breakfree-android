@@ -13,6 +13,8 @@ object AppDefaults {
 
     const val GRACE_PERIOD_SECONDS = 10
 
+    val GRACE_PERIOD_OPTIONS = listOf(0, 5, 10, 15, 30, 60)
+
     val DOOM_SCROLLING_DOMAINS = listOf(
         "tiktok.com",
         "instagram.com",

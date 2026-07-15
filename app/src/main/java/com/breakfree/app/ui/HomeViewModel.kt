@@ -66,7 +66,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         tickerState.flow
     ) { values ->
         try {
-            val breakState = values[0] as? PersistedBreakState ?: PersistedBreakState(BreakPhase.NONE, 0, 0)
+            val now = System.currentTimeMillis()
+            val rawBreakState = values[0] as? PersistedBreakState ?: PersistedBreakState(BreakPhase.NONE, 0, 0)
+            val breakState = breakFreeApp.breakStateManager.effective(rawBreakState, now)
             val durationOptions = (values[1] as? List<*>)?.filterIsInstance<BreakDurationOption>() ?: emptyList()
             val gracePeriod = values[2] as? Int ?: AppDefaults.GRACE_PERIOD_SECONDS
             val blockedAppsList = values[3] as? List<*> ?: emptyList<Any>()
@@ -106,7 +108,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
 
-            val now = System.currentTimeMillis()
             HomeUiState(
                 phase = breakState.phase,
                 graceSecondsRemaining = ((breakState.graceEndsAtEpochMs - now) / 1000).coerceAtLeast(0).toInt(),
@@ -152,21 +153,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun requestBreak(durationSeconds: Int) {
         viewModelScope.launch {
-            val success = breakFreeApp.breakStateManager.requestBreak(durationSeconds, uiState.value.gracePeriodSeconds)
-            if (success) {
-                breakFreeApp.settingsDataStore.recordBreakRequest()
-            }
+            breakFreeApp.requestBreakUseCase(durationSeconds, uiState.value.gracePeriodSeconds)
         }
     }
 
     fun confirmBreak() {
-        viewModelScope.launch {
-            breakFreeApp.breakStateManager.confirmBreak()
-        }
+        breakFreeApp.confirmBreakUseCase()
     }
 
     fun cancelBreak() {
-        breakFreeApp.breakStateManager.cancelBreak()
+        breakFreeApp.cancelBreakUseCase()
     }
 
     fun onUsagePermissionGranted() {

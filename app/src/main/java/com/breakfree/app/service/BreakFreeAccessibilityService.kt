@@ -62,7 +62,7 @@ class BreakFreeAccessibilityService : AccessibilityService() {
 
     private lateinit var scope: CoroutineScope
     @Volatile private var blockedPackages: Set<String> = emptySet()
-    @Volatile private var blockedDomains: Set<String> = emptySet()
+    @Volatile private var blockedDomainsRegex: Regex? = null
     @Volatile private var doomscrollWhitelist: Set<String> = emptySet()
     @Volatile private var mostUsedApps: Set<String> = emptySet()
     @Volatile private var doomscrollProtectionEnabled: Boolean = false
@@ -81,7 +81,6 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     // URL monitoring state
     private var lastSeenUrl: String? = null
     private var browserUrlCheckJob: Job? = null
-    private var cachedUrlBarNode: AccessibilityNodeInfo? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -100,7 +99,15 @@ class BreakFreeAccessibilityService : AccessibilityService() {
 
         scope.launch {
             app.repository.observeBlockedDomains().collectLatest { domains ->
-                blockedDomains = domains.filter { it.isBlocked }.map { it.domain.lowercase() }.toSet()
+                val blockedOnes = domains.filter { it.isBlocked }.map { it.domain.lowercase() }
+                if (blockedOnes.isEmpty()) {
+                    blockedDomainsRegex = null
+                } else {
+                    // Pattern: match exactly the domain OR any subdomain of it
+                    // Example: (.*\.)?(facebook\.com|instagram\.com)
+                    val patterns = blockedOnes.joinToString("|") { Regex.escape(it) }
+                    blockedDomainsRegex = Regex("^(.*\\.)?($patterns)$", RegexOption.IGNORE_CASE)
+                }
             }
         }
 
@@ -121,73 +128,91 @@ class BreakFreeAccessibilityService : AccessibilityService() {
             app.appRepository.apps.collectLatest { apps ->
                 doomscrollWhitelist = apps.filter { it.isDoomscrollWhitelisted }.map { it.packageName }.toSet()
                 
-                // Identify "most used apps" - e.g., top 5 apps by usage time
-                mostUsedApps = apps.sortedByDescending { it.usageTimeMs }
-                    .take(5)
-                    .filter { it.usageTimeMs > 0 }
+                // Identify "most used apps" - e.g., top 10 apps to be safer
+                mostUsedApps = apps.sortedByDescending { it.usageTimeMs + it.popularityScore * 60000L }
+                    .take(10)
                     .map { it.packageName }
                     .toSet()
+                
+                android.util.Log.d("BreakFreeService", "Most used apps updated: $mostUsedApps")
             }
         }
         
-        // Hide overlay if break becomes active
+        // Hide overlay if break becomes active, or show it if it expires
         scope.launch {
             app.breakStateManager.state
                 .map { it.phase == BreakPhase.ACTIVE }
                 .distinctUntilChanged()
                 .collectLatest { active ->
-                    if (active) hideOverlay()
+                    if (active) {
+                        hideOverlay()
+                    } else {
+                        // Break ended, re-evaluate current window
+                        val root = rootInActiveWindow
+                        val pkg = root?.packageName?.toString()
+                        if (pkg != null) {
+                            handleWindowStateChanged(pkg)
+                        }
+                    }
                 }
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        val packageName = event.packageName?.toString() ?: return
-        if (packageName == ownPackageName) return
-
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                handleWindowStateChanged(packageName)
-            }
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                if (isBrowser(packageName)) {
-                    scheduleBrowserUrlCheck(packageName)
+        
+        try {
+            when (event.eventType) {
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+                AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+                    val packageName = event.packageName?.toString() ?: getForegroundPackageName()
+                    if (packageName != null && packageName != ownPackageName) {
+                        handleWindowStateChanged(packageName)
+                    }
+                }
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                    val packageName = event.packageName?.toString() ?: getForegroundPackageName()
+                    if (packageName != null && isBrowser(packageName)) {
+                        scheduleBrowserUrlCheck(packageName)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            android.util.Log.e("BreakFreeService", "Error handling accessibility event", e)
         }
+    }
+
+    private fun getForegroundPackageName(): String? {
+        return rootInActiveWindow?.packageName?.toString()
     }
 
     private fun handleWindowStateChanged(packageName: String) {
         val app = BreakFreeApplication.from(this)
         val isBreakActive = app.breakStateManager.isBreakActiveNow()
 
-        // Update doomscrolling monitor
-        updateDoomscrollMonitor(packageName)
+        try {
+            updateDoomscrollMonitor(packageName)
 
-        // 1. Regular App Blocking (Non-browser apps)
-        if (packageName in blockedPackages) {
-            if (!isBreakActive) {
+            if (isBreakActive) {
+                hideOverlay()
+                return
+            }
+
+            if (packageName in blockedPackages) {
                 showOverlay(packageName)
-            } else {
+                return
+            }
+
+            if (isBrowser(packageName)) {
+                // For browsers, we check the URL
+                checkBrowserUrl(packageName)
+            } else if (packageName != "android" && 
+                       packageName != "com.android.systemui" && 
+                       !packageName.contains("inputmethod")) {
                 hideOverlay()
             }
-            return
-        }
-
-        // 2. Browser Handling
-        if (isBrowser(packageName)) {
-            // Re-resolve the URL bar AccessibilityNodeInfo reference for the active browser
-            cachedUrlBarNode?.recycle()
-            cachedUrlBarNode = findUrlBarNode(packageName)
-            
-            // Immediate check on window change
-            checkBrowserUrl(packageName)
-        } else if (packageName != "android" && 
-                   packageName != "com.android.systemui" && 
-                   !packageName.contains("inputmethod")) {
-            // Switched to an unblocked non-browser app
-            hideOverlay()
+        } catch (e: Exception) {
+            android.util.Log.e("BreakFreeService", "Error in handleWindowStateChanged", e)
         }
     }
 
@@ -204,43 +229,29 @@ class BreakFreeAccessibilityService : AccessibilityService() {
         val app = BreakFreeApplication.from(this)
         val isBreakActive = app.breakStateManager.isBreakActiveNow()
 
-        // Re-read text from the cached URL bar node (don't trust event payload directly)
-        val url = readUrlFromCachedNode() ?: findUrlBarNode(packageName)?.also {
-            cachedUrlBarNode?.recycle()
-            cachedUrlBarNode = it
-        }?.text?.toString()
-
-        // Only fire block-check logic if the value actually changed (detects tab refresh)
-        if (url == null || url == lastSeenUrl) {
-            // Even if URL hasn't changed, if we are currently showing an overlay and break is now active, hide it
-            if (isBreakActive) hideOverlay()
+        if (isBreakActive) {
+            hideOverlay()
             return
         }
-        lastSeenUrl = url
 
+        // Always find current URL node to ensure we have latest text
+        val urlNode = findUrlBarNode(packageName)
+        val url = urlNode?.text?.toString()
+        urlNode?.recycle()
+
+        if (url == null) return
+        
+        // Normalize URL if needed (some browsers don't include protocol)
         val domain = getDomainFromUrl(url) ?: return
-        if (domain in blockedDomains) {
-            if (!isBreakActive) {
-                showOverlay(packageName, domain)
-            }
+        
+        val isBlocked = blockedDomainsRegex?.matches(domain) == true
+        if (isBlocked) {
+            showOverlay(packageName, domain)
         } else {
-            // URL is not blocked, safe to hide overlay
             hideOverlay()
         }
-    }
-
-    private fun readUrlFromCachedNode(): String? {
-        val node = cachedUrlBarNode ?: return null
-        return try {
-            // refresh() ensures we have the latest state from the server side
-            if (node.refresh()) {
-                node.text?.toString()
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
-        }
+        
+        lastSeenUrl = url
     }
 
     private fun findUrlBarNode(packageName: String): AccessibilityNodeInfo? {
@@ -257,9 +268,18 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     }
 
     private fun findUrlNodeRecursive(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.viewIdResourceName?.contains("url_bar", ignoreCase = true) == true ||
-            node.viewIdResourceName?.contains("address_bar", ignoreCase = true) == true ||
-            node.viewIdResourceName?.contains("location_bar", ignoreCase = true) == true) {
+        val resourceName = node.viewIdResourceName
+        val contentDesc = node.contentDescription?.toString()
+        val text = node.text?.toString()
+
+        if (resourceName?.contains("url_bar", ignoreCase = true) == true ||
+            resourceName?.contains("address_bar", ignoreCase = true) == true ||
+            resourceName?.contains("location_bar", ignoreCase = true) == true ||
+            resourceName?.contains("url_view", ignoreCase = true) == true ||
+            contentDesc?.contains("address", ignoreCase = true) == true ||
+            contentDesc?.contains("url", ignoreCase = true) == true ||
+            text?.contains("search or type", ignoreCase = true) == true ||
+            text?.contains("search or enter", ignoreCase = true) == true) {
             return node
         }
 
@@ -282,7 +302,7 @@ class BreakFreeAccessibilityService : AccessibilityService() {
             val host = uri.host ?: return null
             host.removePrefix("www.").lowercase()
         } catch (e: Exception) {
-            // Fallback for partial URLs
+            // Fallback for partial URLs or browsers that only show "domain.com"
             val domain = url.split("/").firstOrNull()?.removePrefix("www.")?.lowercase()
             if (domain?.contains(".") == true) domain else null
         }
@@ -361,7 +381,10 @@ class BreakFreeAccessibilityService : AccessibilityService() {
     }
 
     private fun updateDoomscrollMonitor(packageName: String) {
-        if (!doomscrollProtectionEnabled) return
+        if (!doomscrollProtectionEnabled) {
+            cancelDoomscrollCheck()
+            return
+        }
         
         if (packageName == currentForegroundApp) return
         
@@ -371,20 +394,28 @@ class BreakFreeAccessibilityService : AccessibilityService() {
         appStartTime = System.currentTimeMillis()
         
         // Don't monitor system apps, blocked apps, or whitelisted apps
-        if (packageName == "com.android.settings" || 
+        if (packageName == "android" ||
+            packageName == "com.android.settings" || 
             packageName.contains("android.settings") ||
             packageName == "com.android.systemui" ||
+            packageName == ownPackageName ||
             packageName in blockedPackages ||
             packageName in doomscrollWhitelist) {
+            android.util.Log.d("BreakFreeService", "Doomscroll: Skipping $packageName (system/blocked/whitelist)")
             return
         }
 
         // Only monitor "most used apps" as per requirement
-        if (packageName !in mostUsedApps) return
+        if (packageName !in mostUsedApps) {
+            android.util.Log.d("BreakFreeService", "Doomscroll: Skipping $packageName (not in most used)")
+            return
+        }
 
+        android.util.Log.d("BreakFreeService", "Doomscroll: Starting timer for $packageName")
         // Start 5-minute timer
         doomscrollJob = scope.launch {
             delay(5 * 60 * 1000) // 5 minutes
+            android.util.Log.d("BreakFreeService", "Doomscroll: Warning triggered for $packageName")
             triggerDoomscrollWarning(packageName)
         }
     }
@@ -408,7 +439,10 @@ class BreakFreeAccessibilityService : AccessibilityService() {
             val channel = android.app.NotificationChannel(
                 channelId, "Doomscroll Warnings",
                 android.app.NotificationManager.IMPORTANCE_HIGH
-            )
+            ).apply {
+                description = "Periodic checks to help you avoid doomscrolling"
+                enableVibration(true)
+            }
             notificationManager.createNotificationChannel(channel)
         }
 
@@ -417,14 +451,15 @@ class BreakFreeAccessibilityService : AccessibilityService() {
         }
         val pendingIntent = android.app.PendingIntent.getActivity(
             this, 0, intent,
-            android.app.PendingIntent.FLAG_IMMUTABLE
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val notification = androidx.core.app.NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Time Check!")
             .setContentText("You've been using $appLabel for 5 minutes. Is this a good use of your time?")
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_MAX)
+            .setCategory(androidx.core.app.NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
@@ -444,11 +479,39 @@ class BreakFreeAccessibilityService : AccessibilityService() {
 
     companion object {
         private val BROWSER_CONFIGS = mapOf(
-            "com.android.chrome" to BrowserConfig(listOf("com.android.chrome:id/url_bar")),
-            "org.mozilla.firefox" to BrowserConfig(listOf("org.mozilla.firefox:id/url_bar_title")),
-            "com.sec.android.app.sbrowser" to BrowserConfig(listOf("com.sec.android.app.sbrowser:id/location_bar_edit_text")),
-            "com.opera.browser" to BrowserConfig(listOf("com.opera.browser:id/url_field")),
-            "com.duckduckgo.mobile.android" to BrowserConfig(listOf("com.duckduckgo.mobile.android:id/omnibarTextInput"))
+            "com.android.chrome" to BrowserConfig(listOf(
+                "com.android.chrome:id/url_bar",
+                "com.android.chrome:id/search_box_text"
+            )),
+            "org.mozilla.firefox" to BrowserConfig(listOf(
+                "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
+                "org.mozilla.firefox:id/url_bar_title",
+                "org.mozilla.firefox:id/url_view"
+            )),
+            "com.sec.android.app.sbrowser" to BrowserConfig(listOf(
+                "com.sec.android.app.sbrowser:id/location_bar_edit_text",
+                "com.sec.android.app.sbrowser:id/url_bar"
+            )),
+            "com.opera.browser" to BrowserConfig(listOf(
+                "com.opera.browser:id/url_field",
+                "com.opera.browser:id/address_bar"
+            )),
+            "com.duckduckgo.mobile.android" to BrowserConfig(listOf(
+                "com.duckduckgo.mobile.android:id/omnibarTextInput",
+                "com.duckduckgo.mobile.android:id/search_box"
+            )),
+            "com.brave.browser" to BrowserConfig(listOf(
+                "com.brave.browser:id/url_bar",
+                "com.brave.browser:id/search_box_text"
+            )),
+            "com.microsoft.emmx" to BrowserConfig(listOf(
+                "com.microsoft.emmx:id/url_bar",
+                "com.microsoft.emmx:id/search_box_text"
+            )),
+            "com.vivaldi.browser" to BrowserConfig(listOf(
+                "com.vivaldi.browser:id/url_bar",
+                "com.vivaldi.browser:id/search_box_text"
+            ))
         )
     }
 }
@@ -464,6 +527,7 @@ private fun OverlayContent(
     val breakState by app.breakStateManager.state.collectAsState()
     
     var isVisible by remember { mutableStateOf(false) }
+    var ticker by remember { mutableStateOf(0) }
 
     val appLabel = remember(blockedPackage) {
         runCatching {
@@ -483,6 +547,11 @@ private fun OverlayContent(
         // Keep it transparent for a brief moment to avoid flickering
         delay(100)
         isVisible = true
+        
+        while (true) {
+            delay(1000)
+            ticker++
+        }
     }
 
     Scaffold(

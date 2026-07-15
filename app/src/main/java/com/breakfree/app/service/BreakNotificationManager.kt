@@ -46,9 +46,6 @@ class BreakNotificationManager(private val context: Context) {
             return
         }
 
-        val seconds = (remainingMs / 1000).toInt()
-        val contentText = "Break ends in ${formatCountdown(seconds)}"
-
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -62,11 +59,14 @@ class BreakNotificationManager(private val context: Context) {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("BreakFree is active")
-            .setContentText(contentText)
+            .setContentText("Tap to return to the app")
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .setWhen(state.activeEndsAtEpochMs)
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)

@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.breakfree.app.data.settings.AppTheme
 import com.breakfree.app.ui.SettingsViewModel
 import com.breakfree.app.ui.components.SearchTopAppBar
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,14 +97,18 @@ fun SettingsScreen(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
+                val graceOptions = com.breakfree.app.data.settings.AppDefaults.GRACE_PERIOD_OPTIONS
+                val graceIndex = graceOptions.indexOf(state.gracePeriodSeconds).coerceAtLeast(0)
+                val graceLabel = if (state.gracePeriodSeconds == 0) "Disabled" else "${state.gracePeriodSeconds}s"
+
                 SettingsSliderItem(
                     title = "Grace period",
                     description = "How long you must wait after requesting a break before it starts.",
-                    value = state.gracePeriodSeconds.toFloat(),
-                    onValueChange = { viewModel.setGracePeriod(it.toInt()) },
-                    valueRange = 5f..120f,
-                    steps = 22,
-                    valueLabel = "${state.gracePeriodSeconds}s"
+                    value = graceIndex.toFloat(),
+                    onValueChange = { viewModel.setGracePeriod(graceOptions[it.roundToInt()]) },
+                    valueRange = 0f..(graceOptions.size - 1).toFloat(),
+                    steps = graceOptions.size - 2,
+                    valueLabel = graceLabel
                 )
             }
 
@@ -126,7 +131,7 @@ fun SettingsScreen(
                     title = "Auto-stop break when locked",
                     description = "Automatically stop an active break if the screen remains off for the specified time.",
                     value = autoStopIndex.toFloat(),
-                    onValueChange = { viewModel.setAutoStopOnLockTimeout(autoStopOptions[it.toInt()]) },
+                    onValueChange = { viewModel.setAutoStopOnLockTimeout(autoStopOptions[it.roundToInt()]) },
                     valueRange = 0f..4f,
                     steps = 3,
                     valueLabel = autoStopLabel
@@ -258,7 +263,7 @@ private fun TargetScreenTimeSlider(
         title = "Target screen time",
         description = "Your ideal daily total screen time.",
         value = currentIndex.toFloat(),
-        onValueChange = { onValueChange(options[it.toInt()]) },
+        onValueChange = { onValueChange(options[it.roundToInt()]) },
         valueRange = 0f..(options.size - 1).toFloat(),
         steps = options.size - 2,
         valueLabel = label

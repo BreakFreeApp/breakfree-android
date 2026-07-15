@@ -34,13 +34,23 @@ class DoomscrollWhitelistViewModel(app: Application) : AndroidViewModel(app) {
 
     val uiState: StateFlow<DoomscrollWhitelistUiState> = combine(
         appRepository.apps,
+        breakFreeApp.repository.observeBlockedApps(),
         searchQuery,
         sortOrder,
         isAscending,
         isRefreshing
-    ) { apps, query, order, ascending, refreshing ->
+    ) { values ->
+        val apps = values[0] as? List<AppInfo> ?: emptyList()
+        val blockedApps = values[1] as? List<com.breakfree.app.data.db.entities.BlockedApp> ?: emptyList()
+        val query = values[2] as? String ?: ""
+        val order = values[3] as? SortOrder ?: SortOrder.USAGE
+        val ascending = values[4] as? Boolean ?: false
+        val refreshing = values[5] as? Boolean ?: false
+
+        val blockedPackageNames = blockedApps.map { it.packageName }.toSet()
+        
         // Only show unblocked apps for whitelisting
-        val unblockedApps = apps.filter { !it.isBlocked }
+        val unblockedApps = apps.filter { !blockedPackageNames.contains(it.packageName) }
         
         val filtered = unblockedApps.filter { 
             it.appName.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
